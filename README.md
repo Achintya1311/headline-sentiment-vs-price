@@ -2,7 +2,7 @@
 
 Scores financial headlines and tests them against subsequent returns, with a leakage control that has to fail before any result is believed.
 
-**Status:** Not started · Next: Day 1 - RSS scraper respecting robots.txt, timestamped headlines
+**Status:** Last checkpoint 2026-09-28 · Next: Day 2 - VADER baseline scorer and an evaluation harness
 
 ## What this is
 
@@ -57,6 +57,7 @@ Storage is CSV, not the parquet the scaffold's "How to run" section assumed - ne
 <!-- CHECKPOINTS:START -->
 | Date | Commit | What changed | Next |
 |------|--------|--------------|------|
+| 2026-09-28 | `f3b6ec4` | Day 1: RSS scraper (sentiment.scrape) with a robots.txt cache (fail-closed on a 403 or unreachable robots.txt, per RFC 9309) and a per-host rate limiter that also respects a feed's own Crawl-delay. Ran it live against all 3 registered feeds: economic_times_markets is genuinely allowed and reachable (50 real headlines scraped, snapshotted to fixtures/rss/economic_times_markets.xml with source, title, link, and both the raw and UTC-normalized published timestamp); moneycontrol_business is honestly robots-denied (moneycontrol.com's own robots.txt 403s); reuters_business is unreachable from this sandbox's network (proxy 502 on the CONNECT tunnel), which the robots cache also treats as denied rather than guessing. Headlines are stored as CSV, not the parquet the scaffolded README assumed - neither pyarrow nor fastparquet is available here and no other repo in the portfolio uses parquet either, so README now says so. Offline default reads committed fixtures/rss/*.xml so tests and CI need no network; --live re-fetches for real. 20/20 tests pass (robots allow/deny/fail-closed semantics, rate-limiter timing, RSS parsing incl. malformed items, CSV dedup/merge-across-runs, and the CLI both offline and live-with-mocked-fetch); python -m sentiment.scrape and --live were both run by hand end to end. | Day 2 - VADER baseline scorer and an evaluation harness |
 <!-- CHECKPOINTS:END -->
 
 ## Limitations and what would make me wrong
