@@ -1,0 +1,25 @@
+id,text,expected_label,category,note
+1,Company posts record profit as sales surge,positive,general,everyday sentiment words carry the tone
+2,Stock soars after strong quarterly results,positive,general,everyday sentiment words carry the tone
+3,Shares plunge on weak guidance,negative,general,everyday sentiment words carry the tone
+4,"Firm faces fraud allegations, shares tumble",negative,general,everyday sentiment words carry the tone
+5,Board approves quarterly dividend of Rs 5 per share,neutral,finance_jargon,routine corporate action; 'approves' reads as generically positive to a lexicon with no domain context
+6,Company to report Q2 results on Thursday,neutral,neutral_factual,pure scheduling notice
+7,CEO resigns amid accounting scandal,negative,general,everyday sentiment words carry the tone
+8,Bank shares rally on rate cut hopes,positive,general,everyday sentiment words carry the tone
+9,"Company beats earnings estimates, raises full-year guidance",positive,finance_jargon,the NEXT_STEPS.md trap case - finance jargon a general lexicon does not recognise as bullish
+10,Firm misses revenue targets for third straight quarter,negative,finance_jargon,bearish finance jargon with no everyday negative words
+11,Regulator imposes penalty for compliance lapses,negative,general,everyday sentiment words carry the tone
+12,Company announces stock split effective next month,neutral,finance_jargon,routine corporate action; 'announces' reads as generically positive to a lexicon with no domain context
+13,Auditor flags going concern doubts,negative,general,everyday sentiment words carry the tone
+14,Startup raises funding round led by top investors,positive,general,everyday sentiment words carry the tone
+15,Steel maker reports disappointing margins,negative,general,everyday sentiment words carry the tone
+16,Index closes flat as investors await Fed decision,neutral,neutral_factual,deliberately flat market report with no news
+17,Company wins major export order,positive,general,everyday sentiment words carry the tone
+18,Insurer downgraded by rating agency over solvency concerns,negative,finance_jargon,bearish finance jargon with no everyday negative words
+19,"Retailer posts loss for the year, shares crash",negative,general,everyday sentiment words carry the tone
+20,Company completes acquisition of smaller rival,neutral,neutral_factual,routine corporate action reported without a sentiment framing
+21,Manufacturer recalls product over safety defect,negative,finance_jargon,'safety' scores as a positive lexicon word even though a safety *defect* recall is bad news
+22,Pharma firm gets regulatory approval for new drug,positive,general,everyday sentiment words carry the tone
+23,Airline cancels flights amid pilot strike,negative,general,everyday sentiment words carry the tone
+24,Company names new chief financial officer,neutral,neutral_factual,routine appointment notice

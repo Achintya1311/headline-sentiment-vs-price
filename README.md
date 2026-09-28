@@ -36,11 +36,17 @@ python -m sentiment.scrape
 python -m sentiment.scrape --live                       # real fetch, robots.txt + rate limit enforced
 python -m sentiment.scrape --feed economic_times_markets --live
 
-# Day 2+ (not built yet):
+# Day 2: VADER baseline scorer + evaluation harness. Fully offline - the
+# VADER lexicon is vendored under sentiment/lexicons/, not downloaded.
+python -m sentiment.score                                # scores fixtures/headlines/headlines_raw.csv
+python -m sentiment.score --in path/to.csv --out path/to_scored.csv
+python -m sentiment.evaluate                              # accuracy vs fixtures/eval/vader_eval_set.csv
+
+# Day 3+ (not built yet):
 python -m sentiment.analyse --ticker EXAMPLE.NS --fixtures fixtures/headlines_sample.parquet
 ```
 
-No API key is needed for Day 1 - RSS feeds are public. `.env.example` is for a later day's price data.
+No API key is needed for Day 1 or Day 2 - RSS feeds are public and the VADER lexicon is vendored. `.env.example` is for a later day's price data.
 
 ## Findings
 
@@ -50,7 +56,19 @@ No API key is needed for Day 1 - RSS feeds are public. `.env.example` is for a l
 - `moneycontrol_business` (moneycontrol.com): fetching moneycontrol's own `robots.txt` returns HTTP 403. Per RFC 9309, a 401/403 on robots.txt itself means "assume full disallow" - `RobotsCache` does exactly that and the feed is skipped, never fetched. No fixture exists for this feed because it has never been legitimately scraped.
 - `reuters_business` (feeds.reuters.com): unreachable from this sandbox (proxy returns a 502 on the CONNECT tunnel). `RobotsCache` fails closed on any connection error while reading robots.txt, so this also comes back "denied" rather than attempting the feed anyway. No fixture exists for the same reason.
 
-Storage is CSV, not the parquet the scaffold's "How to run" section assumed - neither `pyarrow` nor `fastparquet` is available in this sandbox and nothing else in the portfolio uses parquet either, so `fixtures/headlines/headlines_raw.csv` is the real format going forward. The `sentiment.analyse --fixtures ...parquet` line above is Day 2+ scaffold text, not yet true.
+Storage is CSV, not the parquet the scaffold's "How to run" section assumed - neither `pyarrow` nor `fastparquet` is available in this sandbox and nothing else in the portfolio uses parquet either, so `fixtures/headlines/headlines_raw.csv` is the real format going forward. The `sentiment.analyse --fixtures ...parquet` line above is Day 3+ scaffold text, not yet true.
+
+**Day 2 - VADER baseline scorer and evaluation harness.** `sentiment.vader_score` wraps NLTK's `SentimentIntensityAnalyzer` against a vendored copy of the lexicon (`sentiment/lexicons/vader_lexicon.txt`, ~92 KB, see `NOTICE.md` there) so scoring never needs `nltk.download()` at run time - verified by moving the sandbox's own downloaded copy aside and re-running the full suite and both CLIs, which behaved identically. `python -m sentiment.score` scores all 50 committed headlines (standard VADER thresholds: compound ≥ 0.05 positive, ≤ -0.05 negative, else neutral) - 29 positive / 16 neutral / 5 negative, mean compound +0.17. That skew is itself a finding, not a market signal: the evaluation harness below shows VADER over-reads routine corporate-action language ("approves", "announces") as positive.
+
+`python -m sentiment.evaluate` runs the scorer against a 24-row hand-labeled set (`fixtures/eval/vader_eval_set.csv`) split into three categories and reports accuracy overall and per category:
+
+| Category | Accuracy | What it tests |
+|---|---|---|
+| `general` (14) | 14/14 (100%) | headlines whose tone lives in everyday sentiment words - VADER's home turf |
+| `neutral_factual` (4) | 3/4 (75%) | routine, tone-free corporate notices |
+| `finance_jargon` (6) | 0/6 (0%) | tone that lives in finance-specific phrasing a general lexicon can't read |
+
+Overall: 17/24 (70.8%). The `finance_jargon` column is the headline result, and it is exactly the caveat NEXT_STEPS.md already flagged: `"Company beats earnings estimates, raises full-year guidance"` scores `0.0` (neutral) despite being unambiguously bullish, and `"Manufacturer recalls product over safety defect"` scores *positive* because "safety" is a positive lexicon word with no notion that "safety defect" reverses it. This is the gap Day 3's FinBERT scorer and the VADER/FinBERT agreement analysis exist to close - not a bug in this scorer, VADER working exactly as documented.
 
 ## Checkpoint log
 
@@ -64,7 +82,9 @@ Storage is CSV, not the parquet the scaffold's "How to run" section assumed - ne
 
 - News feeds are edited and deleted, so coverage is partial and not reproducible from the live web. Everything used is snapshotted.
 - Coverage is currently one source (Economic Times markets RSS). Moneycontrol blocks robots.txt itself with a 403 and Reuters' feed host is unreachable from this sandbox's network - both are recorded, not silently dropped. A single-source sample cannot support a claim about "headline sentiment" broadly; later days' correlation and event-study work needs to be read against that, or coverage needs to widen first.
-- VADER is a general-purpose lexicon and scores plainly bullish financial phrasing as neutral. Treated as a baseline, not a finance model.
+- VADER is a general-purpose lexicon and scores plainly bullish financial phrasing as neutral. Treated as a baseline, not a finance model - Day 2's evaluation harness measures this directly (0/6 on the `finance_jargon` category) rather than asserting it.
+- The eval set is 24 hand-labeled headlines I wrote, not an independent or blind-labeled benchmark, and it is small - a category accuracy of 0/6 or 3/4 is a signal, not a precise estimate. It exists to catch regressions and to give Day 3's FinBERT comparison a documented baseline to beat, not to be a rigorous scorer benchmark on its own.
+- Neither the 50 scraped headlines nor the eval set have been checked against actual subsequent price moves - that correlation and event-study work is Day 5/6, deliberately kept separate from scorer accuracy.
 - Correlation over a short window with many tested horizons manufactures significance. The hypothesis is fixed before the data is touched.
 
 ## Where this sits
