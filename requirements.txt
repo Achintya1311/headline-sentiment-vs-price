@@ -6,3 +6,8 @@ lxml
 nltk
 matplotlib
 pytest
+transformers
+# torch is deliberately not pinned here: install the CPU-only wheel, which
+# is far smaller than the default PyPI build (which drags in CUDA libraries
+# unneeded on this CLI-only, zero-spend project):
+#   uv pip install torch --index-url https://download.pytorch.org/whl/cpu

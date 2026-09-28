@@ -42,11 +42,18 @@ python -m sentiment.score                                # scores fixtures/headl
 python -m sentiment.score --in path/to.csv --out path/to_scored.csv
 python -m sentiment.evaluate                              # accuracy vs fixtures/eval/vader_eval_set.csv
 
-# Day 3+ (not built yet):
+# Day 3: FinBERT scorer + VADER/FinBERT agreement analysis. Needs torch,
+# installed separately as a CPU-only wheel (see requirements.txt), and a
+# network connection the first time only, to download the model:
+uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+python -m sentiment.finbert                               # scores fixtures/headlines/headlines_raw.csv with FinBERT
+python -m sentiment.agreement                              # VADER vs FinBERT: corpus agreement + eval-set accuracy
+
+# Day 4+ (not built yet):
 python -m sentiment.analyse --ticker EXAMPLE.NS --fixtures fixtures/headlines_sample.parquet
 ```
 
-No API key is needed for Day 1 or Day 2 - RSS feeds are public and the VADER lexicon is vendored. `.env.example` is for a later day's price data.
+No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
 
 ## Findings
 
@@ -70,6 +77,13 @@ Storage is CSV, not the parquet the scaffold's "How to run" section assumed - ne
 
 Overall: 17/24 (70.8%). The `finance_jargon` column is the headline result, and it is exactly the caveat NEXT_STEPS.md already flagged: `"Company beats earnings estimates, raises full-year guidance"` scores `0.0` (neutral) despite being unambiguously bullish, and `"Manufacturer recalls product over safety defect"` scores *positive* because "safety" is a positive lexicon word with no notion that "safety defect" reverses it. This is the gap Day 3's FinBERT scorer and the VADER/FinBERT agreement analysis exist to close - not a bug in this scorer, VADER working exactly as documented.
 
+**Day 3 - FinBERT scorer and VADER/FinBERT agreement analysis.** `sentiment/finbert_score.py` wraps `ProsusAI/finbert` (a BERT model fine-tuned on the Financial PhraseBank) via HuggingFace `transformers` + CPU-only `torch`. Unlike VADER's vendored lexicon, the ~440 MB model weights are not committed to this repo - they are pulled from the HuggingFace Hub on first use and cached under `~/.cache/huggingface`, so Day 3 needs network access once, then runs offline. `python -m sentiment.finbert` scores all 50 committed headlines: 15 positive / 25 neutral / 10 negative, mean derived score (positive − negative probability) +0.072 - far more neutral-heavy than VADER's 29/16/5, because FinBERT does not treat routine "Share Price Highlights" roundup headlines as sentiment-bearing the way VADER's lexicon does.
+
+`python -m sentiment.agreement` runs both comparisons NEXT_STEPS.md asked for:
+
+- **Corpus agreement** (50 scraped headlines, no ground truth): VADER and FinBERT agree on only **38%** of labels. The single biggest driver is mechanical, not a modeling disagreement: 13 headlines follow the pattern `"<Company> Share Price Highlights: <Company> Stock Price History"`, and VADER scores every one of them positive (compound +0.296, apparently from "Highlights") while FinBERT correctly reads them as neutral (no sentiment content at all). Strip that pattern out and the disagreement is still substantial - the two models are measuring different things, which is exactly why an agreement number alone would be misleading without looking at *where* they disagree.
+- **Eval-set accuracy** (24 hand-labeled headlines, ground truth from a human): FinBERT scores 91.7% overall vs VADER's 70.8%, and the category breakdown shows why - `finance_jargon` accuracy goes from VADER's documented 0/6 (0%) to FinBERT's 6/6 (100%), closing the exact gap Day 2 found (`"Company beats earnings estimates, raises full-year guidance"` now reads positive; `"Manufacturer recalls product over safety defect"` now reads negative). That is not a clean sweep, though: FinBERT drops slightly below VADER on `general` (92.9% vs 100%), misreading `"Bank shares rally on rate cut hopes"` as negative - an honest miss on a headline VADER's everyday-sentiment lexicon gets right, worth naming rather than glossing over the one category where a finance-tuned model loses to a general-purpose one.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -84,7 +98,10 @@ Overall: 17/24 (70.8%). The `finance_jargon` column is the headline result, and 
 - News feeds are edited and deleted, so coverage is partial and not reproducible from the live web. Everything used is snapshotted.
 - Coverage is currently one source (Economic Times markets RSS). Moneycontrol blocks robots.txt itself with a 403 and Reuters' feed host is unreachable from this sandbox's network - both are recorded, not silently dropped. A single-source sample cannot support a claim about "headline sentiment" broadly; later days' correlation and event-study work needs to be read against that, or coverage needs to widen first.
 - VADER is a general-purpose lexicon and scores plainly bullish financial phrasing as neutral. Treated as a baseline, not a finance model - Day 2's evaluation harness measures this directly (0/6 on the `finance_jargon` category) rather than asserting it.
-- The eval set is 24 hand-labeled headlines I wrote, not an independent or blind-labeled benchmark, and it is small - a category accuracy of 0/6 or 3/4 is a signal, not a precise estimate. It exists to catch regressions and to give Day 3's FinBERT comparison a documented baseline to beat, not to be a rigorous scorer benchmark on its own.
+- The eval set is 24 hand-labeled headlines I wrote, not an independent or blind-labeled benchmark, and it is small - a category accuracy of 0/6 or 6/6 is a signal, not a precise estimate. It exists to catch regressions and to give Day 3's FinBERT comparison a documented baseline to beat, not to be a rigorous scorer benchmark on its own. The same 24 headlines were also used to pick which model to trust more, so this is not a held-out test set for anything built on top of FinBERT later.
+- FinBERT's model weights are not vendored like the VADER lexicon - they are fetched from the HuggingFace Hub on first use (~440 MB) and cached locally. If this sandbox (or CI) ever runs with no network and no pre-populated cache, `sentiment.finbert` and `sentiment.agreement` will fail; unlike Day 1/2's fixture-first offline guarantee, Day 3 needs network at least once.
+- FinBERT is not strictly better than VADER: it closes the `finance_jargon` gap completely (0% -> 100%) but loses ground on `general` (100% -> 92.9%), misreading "Bank shares rally on rate cut hopes" as negative. Neither model is a free upgrade over the other across every category.
+- The 38% corpus-level agreement rate is descriptive, not a quality metric - the unlabeled 50-headline corpus has no ground truth, so "the models disagree" says nothing about which one is right. A large share of the disagreement traces to a single repeated headline template ("Share Price Highlights"), so the number would move a lot with a different or larger sample.
 - Neither the 50 scraped headlines nor the eval set have been checked against actual subsequent price moves - that correlation and event-study work is Day 5/6, deliberately kept separate from scorer accuracy.
 - Correlation over a short window with many tested horizons manufactures significance. The hypothesis is fixed before the data is touched.
 
