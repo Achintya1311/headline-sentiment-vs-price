@@ -2,7 +2,7 @@
 
 Scores financial headlines and tests them against subsequent returns, with a leakage control that has to fail before any result is believed.
 
-**Status:** Last checkpoint 2026-09-28 · Next: Day 4 - timestamp alignment: headline time vs market hours, look-ahead handled explicitly
+**Status:** Last checkpoint 2026-09-29 · Next: Day 5 - contemporaneous vs lagged correlation; event study around high-magnitude sentiment days
 
 ## What this is
 
@@ -49,7 +49,12 @@ uv pip install torch --index-url https://download.pytorch.org/whl/cpu
 python -m sentiment.finbert                               # scores fixtures/headlines/headlines_raw.csv with FinBERT
 python -m sentiment.agreement                              # VADER vs FinBERT: corpus agreement + eval-set accuracy
 
-# Day 4+ (not built yet):
+# Day 4: timestamp alignment. Maps each headline to the first trading
+# session whose own open happens after it was published - no live data,
+# pure calendar logic against IST market hours.
+python -m sentiment.align                                  # aligns fixtures/headlines/headlines_raw.csv
+
+# Day 5+ (not built yet):
 python -m sentiment.analyse --ticker EXAMPLE.NS --fixtures fixtures/headlines_sample.parquet
 ```
 
@@ -84,6 +89,12 @@ Overall: 17/24 (70.8%). The `finance_jargon` column is the headline result, and 
 - **Corpus agreement** (50 scraped headlines, no ground truth): VADER and FinBERT agree on only **38%** of labels. The single biggest driver is mechanical, not a modeling disagreement: 13 headlines follow the pattern `"<Company> Share Price Highlights: <Company> Stock Price History"`, and VADER scores every one of them positive (compound +0.296, apparently from "Highlights") while FinBERT correctly reads them as neutral (no sentiment content at all). Strip that pattern out and the disagreement is still substantial - the two models are measuring different things, which is exactly why an agreement number alone would be misleading without looking at *where* they disagree.
 - **Eval-set accuracy** (24 hand-labeled headlines, ground truth from a human): FinBERT scores 91.7% overall vs VADER's 70.8%, and the category breakdown shows why - `finance_jargon` accuracy goes from VADER's documented 0/6 (0%) to FinBERT's 6/6 (100%), closing the exact gap Day 2 found (`"Company beats earnings estimates, raises full-year guidance"` now reads positive; `"Manufacturer recalls product over safety defect"` now reads negative). That is not a clean sweep, though: FinBERT drops slightly below VADER on `general` (92.9% vs 100%), misreading `"Bank shares rally on rate cut hopes"` as negative - an honest miss on a headline VADER's everyday-sentiment lexicon gets right, worth naming rather than glossing over the one category where a finance-tuned model loses to a general-purpose one.
 
+**Day 4 - timestamp alignment.** `sentiment/market_hours.py` maps every headline's `published_at` to a `session_date`: the first NSE trading day whose 09:15 IST open happens strictly after the headline was published, so no aligned session's return can include price action that predates the news. Three cases collapse to one rule (`align_headline`): a headline is aligned to *today* only if today is a trading day and the headline arrived before today's open; every other case (during the session, after the close, or on a weekend/holiday) rolls forward to the next trading day. `Alignment.leak_free()` asserts the invariant directly - the session's open is strictly after the local timestamp - rather than trusting the classification logic that produced it, and `sentiment.align`'s CLI asserts it on every row before writing.
+
+Run against the real 50-headline fixture (all real Economic Times timestamps from Monday 28 Sep 2026, not synthetic): 21 pre-open, 21 intraday, 8 post-close - a genuine spread across all three cases, not a corner case invented for the test. The exact trap NEXT_STEPS.md names shows up in the real data: a headline timestamped 09:20:57 IST (`"Shah Investor's Home IPO opens today..."`) is intraday, not pre-open, and aligns to Tuesday the 29th, not Monday the 28th it was published on - the same headline naively bucketed by calendar date alone would wrongly get credited with (or blamed for) Monday's full-day return, most of which happened before it existed.
+
+`python -m sentiment.align` writes `outputs/headlines_aligned.csv` (original columns plus `local_time`, `timing`, `session_date`) - Day 5's correlation and event-study work reads `session_date` to know which day's return each headline may honestly be tested against.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -104,6 +115,8 @@ Overall: 17/24 (70.8%). The `finance_jargon` column is the headline result, and 
 - FinBERT is not strictly better than VADER: it closes the `finance_jargon` gap completely (0% -> 100%) but loses ground on `general` (100% -> 92.9%), misreading "Bank shares rally on rate cut hopes" as negative. Neither model is a free upgrade over the other across every category.
 - The 38% corpus-level agreement rate is descriptive, not a quality metric - the unlabeled 50-headline corpus has no ground truth, so "the models disagree" says nothing about which one is right. A large share of the disagreement traces to a single repeated headline template ("Share Price Highlights"), so the number would move a lot with a different or larger sample.
 - Neither the 50 scraped headlines nor the eval set have been checked against actual subsequent price moves - that correlation and event-study work is Day 5/6, deliberately kept separate from scorer accuracy.
+- `market_hours.is_trading_day` is weekday-only - there is no NSE holiday calendar. A headline published on an actual market holiday (e.g. a Monday that NSE has closed for a festival) is wrongly treated as a trading day and aligned one session too early. Free NSE holiday-calendar data exists but has not been wired in yet; until it is, `session_date` should be read as "the next weekday", not "the next actual trading day", on the handful of days a year that differ.
+- The alignment rule is deliberately conservative for intraday headlines: a headline published at 14:00 IST still has 90 minutes of the same session left to react in, but this module rolls it all the way to the next day rather than trying to use the partial remainder of today's session - there is no intraday price fixture in this repo to test a same-day partial reaction against, and guessing without one would be exactly the kind of unverified number this portfolio avoids.
 - Correlation over a short window with many tested horizons manufactures significance. The hypothesis is fixed before the data is touched.
 
 ## Where this sits
