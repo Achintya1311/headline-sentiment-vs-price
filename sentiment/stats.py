@@ -60,6 +60,74 @@ def pearson_with_ci(xs: list[float], ys: list[float]) -> PearsonResult:
 
 
 @dataclass(frozen=True)
+class OlsFit:
+    slope: float
+    intercept: float
+
+    def predict(self, x: float) -> float:
+        return self.intercept + self.slope * x
+
+
+def ols_fit(xs: list[float], ys: list[float]) -> OlsFit:
+    """Ordinary least squares for y = intercept + slope * x.
+
+    Closed-form single-predictor fit (no numpy/scipy dependency) - the
+    normal equations for one predictor reduce to slope = cov(x,y)/var(x).
+    """
+    if len(xs) != len(ys):
+        raise ValueError("xs and ys must be the same length")
+    n = len(xs)
+    if n < 2:
+        raise ValueError("need at least 2 points to fit a line")
+    mean_x = sum(xs) / n
+    mean_y = sum(ys) / n
+    var_x = sum((x - mean_x) ** 2 for x in xs)
+    if var_x == 0:
+        # every x identical (Day 5 found this happens often here - see
+        # tickers.py's docstring): no information to fit a slope from.
+        return OlsFit(slope=0.0, intercept=mean_y)
+    cov = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    slope = cov / var_x
+    intercept = mean_y - slope * mean_x
+    return OlsFit(slope=slope, intercept=intercept)
+
+
+def r_squared(y_true: list[float], y_pred: list[float]) -> float:
+    """In-sample R^2: 1 - SS_res / SS_tot, SS_tot against y_true's own mean."""
+    n = len(y_true)
+    mean_y = sum(y_true) / n
+    ss_tot = sum((y - mean_y) ** 2 for y in y_true)
+    if ss_tot == 0:
+        return 0.0
+    ss_res = sum((yt - yp) ** 2 for yt, yp in zip(y_true, y_pred))
+    return 1 - ss_res / ss_tot
+
+
+def oos_r_squared(y_test: list[float], y_pred: list[float], train_mean: float) -> float:
+    """Out-of-sample R^2 (Campbell-Thompson / Goyal-Welch style): 1 - SS_res /
+    SS_tot, where SS_tot benchmarks against the *training* mean, not the
+    test set's own mean - the fair comparison is against the naive forecast
+    a trader could actually have made ahead of time (predict the historical
+    average return), not against a mean that peeks at the test data itself.
+
+    Positive means the model beats that naive baseline out of sample;
+    negative means it is worse than just guessing the training mean.
+    """
+    ss_tot = sum((y - train_mean) ** 2 for y in y_test)
+    if ss_tot == 0:
+        return 0.0
+    ss_res = sum((yt - yp) ** 2 for yt, yp in zip(y_test, y_pred))
+    return 1 - ss_res / ss_tot
+
+
+def mean_absolute_error(y_true: list[float], y_pred: list[float]) -> float:
+    n = len(y_true)
+    if n == 0:
+        raise ValueError("need at least 1 point")
+    return sum(abs(yt - yp) for yt, yp in zip(y_true, y_pred)) / n
+
+
+@dataclass(frozen=True)
 class BootstrapDiffResult:
     diff: float
     ci_low: float

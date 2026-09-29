@@ -2,7 +2,15 @@ import math
 
 import pytest
 
-from sentiment.stats import bootstrap_mean_diff_ci, pearson_r, pearson_with_ci
+from sentiment.stats import (
+    bootstrap_mean_diff_ci,
+    mean_absolute_error,
+    ols_fit,
+    oos_r_squared,
+    pearson_r,
+    pearson_with_ci,
+    r_squared,
+)
 
 
 def test_pearson_r_perfect_positive_correlation():
@@ -75,3 +83,70 @@ def test_bootstrap_mean_diff_ci_identical_groups_center_near_zero():
     result = bootstrap_mean_diff_ci(a, list(a), seed=7, n_boot=4000)
     assert result.diff == pytest.approx(0.0, abs=1e-9)
     assert result.ci_low < 0 < result.ci_high or math.isclose(result.ci_low, 0, abs_tol=1e-6)
+
+
+def test_ols_fit_recovers_a_known_line():
+    xs = [0.0, 1.0, 2.0, 3.0, 4.0]
+    ys = [1.0, 3.0, 5.0, 7.0, 9.0]  # y = 1 + 2x, no noise
+    fit = ols_fit(xs, ys)
+    assert fit.slope == pytest.approx(2.0)
+    assert fit.intercept == pytest.approx(1.0)
+    assert fit.predict(10.0) == pytest.approx(21.0)
+
+
+def test_ols_fit_zero_variance_x_returns_zero_slope_and_mean_intercept():
+    # Day 6's own committed-fixture finding: every usable headline shares the
+    # identical compound score, so there is no slope to fit at all - this
+    # must return a defined answer (slope=0), not divide by zero.
+    xs = [0.296, 0.296, 0.296, 0.296]
+    ys = [0.01, -0.02, 0.03, -0.04]
+    fit = ols_fit(xs, ys)
+    assert fit.slope == 0.0
+    assert fit.intercept == pytest.approx(sum(ys) / len(ys))
+
+
+def test_ols_fit_requires_equal_length_and_at_least_two_points():
+    with pytest.raises(ValueError):
+        ols_fit([1, 2], [1])
+    with pytest.raises(ValueError):
+        ols_fit([1], [1])
+
+
+def test_r_squared_perfect_fit_is_one():
+    y_true = [1.0, 2.0, 3.0]
+    assert r_squared(y_true, y_true) == pytest.approx(1.0)
+
+
+def test_r_squared_predicting_the_mean_everywhere_is_zero():
+    y_true = [1.0, 2.0, 3.0]
+    mean_pred = [2.0, 2.0, 2.0]
+    assert r_squared(y_true, mean_pred) == pytest.approx(0.0)
+
+
+def test_oos_r_squared_positive_when_predictions_beat_the_training_mean():
+    y_test = [1.0, 2.0, 3.0]
+    y_pred = [1.1, 2.1, 2.9]  # close to actual
+    assert oos_r_squared(y_test, y_pred, train_mean=2.0) > 0
+
+
+def test_oos_r_squared_is_zero_when_prediction_equals_the_training_mean():
+    # exactly what sentiment.regress reports on the committed fixture: a
+    # zero-variance predictor makes every prediction equal the training mean.
+    y_test = [1.0, -3.0, 5.0]
+    y_pred = [2.0, 2.0, 2.0]
+    assert oos_r_squared(y_test, y_pred, train_mean=2.0) == pytest.approx(0.0)
+
+
+def test_oos_r_squared_negative_when_worse_than_the_training_mean_baseline():
+    y_test = [1.0, 2.0, 3.0]
+    y_pred = [10.0, -8.0, 15.0]  # wild misses
+    assert oos_r_squared(y_test, y_pred, train_mean=2.0) < 0
+
+
+def test_mean_absolute_error_basic():
+    assert mean_absolute_error([1.0, 2.0, 3.0], [1.0, 2.0, 5.0]) == pytest.approx(2.0 / 3.0)
+
+
+def test_mean_absolute_error_requires_at_least_one_point():
+    with pytest.raises(ValueError):
+        mean_absolute_error([], [])
