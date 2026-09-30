@@ -16,6 +16,8 @@ Shuffled-timestamp control: randomise headline times and the signal must disappe
 
 This is the test that decides whether the repo is finished. A result that has not passed it is a draft.
 
+Implemented Day 8 as `sentiment/audit.py` / `python -m sentiment.audit`, pinned in CI by `tests/test_audit.py::test_run_against_committed_fixture_passes_with_the_default_seed`. On the committed fixture it passes (p=0.273) - see Findings and "Why this might be spurious" for what that PASS does and does not establish given how small this sample is.
+
 ## Data sources
 
 Every source is free. Nothing in this project requires a paid tier, a subscription, or a funded account.
@@ -77,8 +79,13 @@ python -m sentiment.overlay
 python -m sentiment.overlay --live
 python -m sentiment.overlay --window-before 8 --window-after 2
 
-# Day 8 (not built yet): the leakage/audit pass (shuffle headline timestamps,
-# confirm the signal disappears) plus a "why this might be spurious" section.
+# Day 8: ml-pipeline-audit. Shuffles headline timestamps among Day 5's
+# resolved headlines (title/ticker/compound fixed, only published_at
+# permuted) many times, and compares the real, leak-free correlation
+# against that empirical null via a two-sided permutation p-value.
+python -m sentiment.audit
+python -m sentiment.audit --live
+python -m sentiment.audit --n-shuffles 5000 --seed 1
 ```
 
 No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
@@ -136,6 +143,23 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 
 `cumulative_abnormal_return.png` aligns each resolved headline to trading-day offsets from its own aligned session (0 = event day) and cumulates abnormal return (vs the equal-weighted proxy) across the default window (-5 to +1 trading days), averaged separately across the high- and low-magnitude groups. The honest result is **not** a clean event-day reaction: the high-magnitude group's mean CAR is already running positive (+2.1% at offset -5) well before offset 0, because two of the three tickers (Great Eastern Shipping, Max Financial) were already in an uptrend before their headline appeared - the group's CAR trajectory reflects pre-existing momentum in 2 of 3 names, not a reaction to news, and Fortis Healthcare's steep decline (the one name where the headline plausibly *should* have mattered, in the wrong direction) is outvoted by the other two in a 3-headline average. With n=3, this cannot support any claim about what high-magnitude sentiment headlines do to abnormal returns on this fixture - the chart is descriptive, and the number of trading days actually observed at each offset varies (documented in `average_car_by_offset`'s docstring): offset +1 has fewer contributing headlines than offset 0, because Tuesday-aligned headlines' next session had not traded yet in this fixture, the same gap Day 5/6 already hit.
 
+**Day 8 - ml-pipeline-audit.** `sentiment/audit.py` implements the correctness gate this repo has pointed at since Day 1: take Day 5's 23 resolved headlines, keep each one's title/ticker/compound score fixed, and permute `published_at` among them 2,000 times with a fixed seed. Each shuffle sends `market_hours.align_headline` an almost-certainly-wrong timestamp, so the "contemporaneous return" it pairs with a given compound score is, under the null, unrelated to what that headline actually said or when it actually ran. Re-computing the Pearson r under every shuffle builds an empirical null distribution; the real, leak-free r is then compared to it with a two-sided permutation p-value, rather than assumed to average to zero.
+
+Result on the committed fixture: real r = -0.185 (n=23, matching Day 5 exactly), shuffled-timestamp null mean r = **+0.116** over 2,000 shuffles (not 0.0), |real r| sits at the 73rd percentile of |null r|, p = 0.273. That clears the `alpha=0.05` bar the CLI checks - the real correlation is not a standout against wrong-timestamp controls - but two things about this result are worth being explicit about rather than reporting a bare PASS. First, the null's own mean isn't near zero: with only 23 points and 17-20 of them tied at `compound=0.296` (Day 5/6's saturation finding), the handful of informative headlines dominate whichever return they happen to land on under a given shuffle, so this null distribution is itself a symptom of low information content, not the clean zero-centered baseline a textbook permutation test assumes. Second, and more fundamentally: Day 5's real correlation was already statistically indistinguishable from zero before this audit ran. A PASS here rules out "the pipeline's apparent correlation only exists because of a timing leak" - it cannot rule in "there is no relationship," because there was barely a relationship on the table to test in the first place. `tests/test_audit.py::test_run_against_committed_fixture_passes_with_the_default_seed` pins these exact numbers so this runs as a CI assertion, not a one-off script, per NEXT_STEPS.md's "Done when." 141/154 tests pass (12 new; the same 13 pre-existing FinBERT/torch failures as every prior day - torch is not installed in this sandbox). `python -m sentiment.audit` and `--seed 42` were both run by hand against the committed fixture.
+
+## Why this might be spurious
+
+A null result earns the same scrutiny a positive one would - and this pipeline has several ways to be wrong in either direction, not just the one Day 8's leakage test checks for:
+
+- **Underpowered, not clean.** 23 headlines, 17-20 of them sharing one VADER score, is not enough independent variation to tell "no relationship" apart from "not enough data to see one." Day 8's shuffle test confirms the real correlation isn't an artifact of broken timestamp handling; it cannot confirm sentiment and returns are actually unrelated, because a real 100-headline sample with genuine score variation could show something this one structurally cannot.
+- **One source, one week.** Every headline is from Economic Times' markets RSS feed, scraped over 28-29 Sep 2026 - a single outlet's editorial voice during one calm week. A relationship (or its absence) here says nothing about earnings season, a market shock, or a different feed's more opinionated headlines.
+- **Multiple looks at the same small dataset.** Contemporaneous r, lagged r, an event-study mean-return diff, an OLS slope (Day 6), and now a permutation null (Day 8) are five different statistics computed on overlapping slices of the same 23-50 headlines. None of them was pre-registered against a single hypothesis; if any one of them had come back "significant," that would deserve exactly the skepticism this section gives the null, not less, because testing several related things on one small sample raises the odds one clears an arbitrary threshold by chance.
+- **The benchmark is circular.** Day 7's "abnormal" return is measured against an equal-weighted proxy built from the same 23 sentiment-selected tickers, not an independent index. Some of whatever co-movement shows up between "sentiment" and "abnormal return" is really just these 23 names' own correlation with each other that week.
+- **The scorer has known, documented blind spots on this exact data.** Day 2/7 already caught VADER reading a Fortis Healthcare litigation headline as strongly positive (+0.70 compound) while the stock fell 10% that month. Any correlation this pipeline reports is a correlation with *VADER's* read of sentiment, which is demonstrably wrong on at least one headline in this very sample - not with sentiment itself.
+- **The return side is unaudited for its own form of look-ahead.** Day 4 guarantees a headline's timestamp cannot see into the future. Yahoo's daily bars, by contrast, are fetched as currently reported - a later split, dividend adjustment, or data revision applied to a historical bar would not be caught by anything in this pipeline, and nothing here checks for it.
+
+None of this is a reason to distrust the specific numbers reported - it is why they are reported as "no detectable signal on this fixture," not "no signal exists," and why every result on the way here has come with the same kind of caveat rather than a headline number standing alone.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -171,6 +195,8 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 - Day 7's "market" is a proxy, not a real benchmark: the equal-weighted mean return of the same 23-ticker universe Day 5 resolved headlines against, because no free NSE index fixture (NIFTY 50 or similar) is committed to this repo. Abnormal return here means "in excess of this specific 23-name sample," which is itself sentiment-selected, not "in excess of the market" in the usual sense - a real index would need a new data source wired in first.
 - The cumulative abnormal return chart's high-magnitude group has n=3 - the same 3 headlines Day 5's event study already used, because they are the only ones in this fixture that are not saturated at `compound = 0.296`. A 3-headline average cannot support a causal claim about sentiment and abnormal returns; the chart is a descriptive trajectory, not a tested effect, and one bad-fit case (Fortis Healthcare, see Findings) is outvoted by two better-fit ones in the average.
 - The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
+- Day 8's shuffled-timestamp null distribution has mean r=+0.116 over 2,000 shuffles, not the ~0 a textbook permutation null assumes - a direct consequence of only 23 points with 17-20 of them tied at the same compound score, so the handful of informative headlines dominate whichever return a given shuffle happens to pair them with. The leakage test's PASS is read against this specific (non-zero-centered) empirical null, which is the statistically correct comparison, but it means the test has less power to detect a subtle leak than the same test would on a larger, less saturated sample.
+- A PASS on Day 8's leakage test is not evidence of "no relationship" - it is evidence that Day 5's already-null-looking correlation does not depend on genuine time alignment (i.e. is not a timing-based leak). Since that correlation was statistically indistinguishable from zero before the audit ran, this test could not have detected a subtle leak that happened to also produce a near-zero number; it is a check against one specific failure mode, not a general certificate of correctness. See "Why this might be spurious" for the fuller list of ways this pipeline's null result could still mislead.
 
 ## Where this sits
 
