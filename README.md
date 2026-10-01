@@ -16,6 +16,8 @@ Shuffled-timestamp control: randomise headline times and the signal must disappe
 
 This is the test that decides whether the repo is finished. A result that has not passed it is a draft.
 
+**Implemented Day 8** as `python -m sentiment.audit` (`sentiment/audit.py`) - a permutation test over Day 5's contemporaneous correlation, not a single shuffle. See Day 8 Findings for the honest result and why this fixture makes the gate weaker than it sounds: with only two distinct session dates in the data, "disappear" has little signal to disappear in the first place.
+
 ## Data sources
 
 Every source is free. Nothing in this project requires a paid tier, a subscription, or a funded account.
@@ -77,8 +79,14 @@ python -m sentiment.overlay
 python -m sentiment.overlay --live
 python -m sentiment.overlay --window-before 8 --window-after 2
 
-# Day 8 (not built yet): the leakage/audit pass (shuffle headline timestamps,
-# confirm the signal disappears) plus a "why this might be spurious" section.
+# Day 8: shuffled-timestamp leakage audit - a permutation test, not one
+# shuffle. Reuses Day 5's resolved headlines (ticker + VADER compound) but
+# reassigns a different headline's timestamp before re-running market_hours
+# alignment, --n-shuffles times, and reports how the real correlation
+# compares to that null distribution.
+python -m sentiment.audit
+python -m sentiment.audit --n-shuffles 500 --seed 42
+python -m sentiment.audit --live
 ```
 
 No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
@@ -136,6 +144,14 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 
 `cumulative_abnormal_return.png` aligns each resolved headline to trading-day offsets from its own aligned session (0 = event day) and cumulates abnormal return (vs the equal-weighted proxy) across the default window (-5 to +1 trading days), averaged separately across the high- and low-magnitude groups. The honest result is **not** a clean event-day reaction: the high-magnitude group's mean CAR is already running positive (+2.1% at offset -5) well before offset 0, because two of the three tickers (Great Eastern Shipping, Max Financial) were already in an uptrend before their headline appeared - the group's CAR trajectory reflects pre-existing momentum in 2 of 3 names, not a reaction to news, and Fortis Healthcare's steep decline (the one name where the headline plausibly *should* have mattered, in the wrong direction) is outvoted by the other two in a 3-headline average. With n=3, this cannot support any claim about what high-magnitude sentiment headlines do to abnormal returns on this fixture - the chart is descriptive, and the number of trading days actually observed at each offset varies (documented in `average_car_by_offset`'s docstring): offset +1 has fewer contributing headlines than offset 0, because Tuesday-aligned headlines' next session had not traded yet in this fixture, the same gap Day 5/6 already hit.
 
+**Day 8 - shuffled-timestamp leakage audit.** `sentiment/audit.py` implements the README's own "Correctness gate" as a permutation test, not a single shuffle: each of Day 5's 23 resolved headlines keeps its own title, ticker, and VADER `compound` score, but is paired with a *different* headline's `published_at` before `market_hours.align_headline` re-runs - everything downstream (session lookup, bar lookup) is untouched. `python -m sentiment.audit` runs 2000 independent permutations and compares the real (identity-assignment) contemporaneous `r` against the resulting null distribution.
+
+Before trusting this against the real fixture, it was proven against a synthetic positive control first (`tests/test_audit.py`): six synthetic headlines with a noise-free `return = 0.1 * compound` relationship recover `r=1.000` exactly under identity assignment, and shuffling drives the mean `|r|` down to roughly 0.1-0.2 with a permutation p-value under 0.05 - the audit script can in fact tell a real signal from noise and does make it disappear under shuffling, which is the thing to check before trusting what it says about the real, honestly-null data.
+
+Against the real fixture: real contemporaneous `r=-0.185` (Day 5's own number), and 2000 shuffled-timestamp permutations give mean `r=+0.116`, range `[-0.268, +0.514]`, permutation p-value `0.273` (seed 0). `p >= 0.05` means the real result is not distinguishable from a randomly-aligned control - consistent with Day 5's own wide 95% CI `[-0.555, +0.246]` that already contains zero. That is the expected, honest outcome, not a clean pass of the gate: there was very little signal for a leak to inflate in the first place, so this mostly confirms "nothing to disappear" rather than "a real effect vanished under scrutiny" - see Limitations for why the gate itself is weaker here than the README's description of it implies.
+
+**Why this might be spurious - written against this repo's own results, not a generic disclaimer:** (1) every number in Findings comes from a single scrape of a single trading day's RSS feed (28-29 Sep 2026, see Day 1) against a single day's price snapshot - one calendar window, not a time series, so nothing here has been tested against a second, independent sample; a different day's scrape could show a different sign by chance alone and this repo would have no way yet to tell the difference from a real effect. (2) 17 of 23 resolved headlines are tied at the identical VADER `compound = 0.296` (Day 5), so most of the apparent "n=23" is really a handful of independent sentiment values with repeated weight - far less effective sample size than the headline count suggests. (3) The audit above shares that same weakness one level up: resolved headlines align to only 2 distinct session dates (28th: 15 headlines, 29th: 8), so a "timestamp shuffle" is really just re-partitioning which subset of 23 tickers gets labelled with the market's 28th-Sep move (mean -1.1%) versus its 29th-Sep move (mean -0.78%) - a narrow, two-cluster null distribution, not the richer one a multi-week scrape would produce, and part of why the shuffled mean (+0.116) isn't centered on exactly zero. (4) Multiple horizons were tested across Days 5-7 (contemporaneous, lagged, an event-study threshold, a regression) on the same small fixture - exactly the multiple-testing trap NEXT_STEPS.md names; no correction across those tests has been applied, and with results this uniformly null it has not mattered yet, but it would need to be addressed before reporting a positive result from any one of them in isolation. (5) This audit only covers the contemporaneous correlation - Day 6's regression and Day 7's event study/CAR charts have not been run through the same shuffle framework, so "the gate passed" should be read as scoped to one of four tested relationships, not all of them.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -171,6 +187,9 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 - Day 7's "market" is a proxy, not a real benchmark: the equal-weighted mean return of the same 23-ticker universe Day 5 resolved headlines against, because no free NSE index fixture (NIFTY 50 or similar) is committed to this repo. Abnormal return here means "in excess of this specific 23-name sample," which is itself sentiment-selected, not "in excess of the market" in the usual sense - a real index would need a new data source wired in first.
 - The cumulative abnormal return chart's high-magnitude group has n=3 - the same 3 headlines Day 5's event study already used, because they are the only ones in this fixture that are not saturated at `compound = 0.296`. A 3-headline average cannot support a causal claim about sentiment and abnormal returns; the chart is a descriptive trajectory, not a tested effect, and one bad-fit case (Fortis Healthcare, see Findings) is outvoted by two better-fit ones in the average.
 - The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
+- Day 8's shuffled-timestamp audit is a weaker test on this fixture than the README's "Correctness gate" description implies: the 23 resolved headlines align to only 2 distinct session dates, so a "random timestamp" shuffle is really a random re-partition of 23 tickers into two groups of sizes 15/8, not a draw from a genuinely varied calendar - the resulting null distribution is narrow (and, on this fixture, centered around +0.12 rather than 0, because the market-wide average move differs slightly between the two dates). A wider scrape spanning more calendar days would give the permutation test real entropy to work with.
+- The audit only covers Day 5's contemporaneous correlation. Day 6's out-of-sample regression and Day 7's event-study/CAR charts have not been run through an equivalent shuffle test - a passing (or honestly-null) contemporaneous gate says nothing yet about whether those other three analyses would hold up the same way under the same scrutiny.
+- Every finding in this repo rests on one scrape of one trading day (28-29 Sep 2026) against one price snapshot of the same window - a single calendar sample, not a time series. The near-zero correlations and the audit's null permutation p-value are consistent with "no detectable signal here," but with this little independent variation to test against, they cannot yet distinguish a genuinely absent effect from one this sample is simply too narrow to see.
 
 ## Where this sits
 
