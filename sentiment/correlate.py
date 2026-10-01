@@ -36,7 +36,7 @@ import csv
 import sys
 from pathlib import Path
 
-from sentiment.headline import read_csv
+from sentiment.headline import Headline, read_csv
 from sentiment.market_hours import align_headline
 from sentiment.prices import PriceFetchError, bar_on, load_bars, next_session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
@@ -62,11 +62,17 @@ ROW_FIELDNAMES = [
 ]
 
 
-def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
-    """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
-    for headlines whose company was recognised but whose ticker could not be
-    fetched (see ``sentiment.tickers``)."""
-    headlines = read_csv(in_path)
+def build_rows_from_headlines(
+    headlines: list[Headline], live: bool = False, warn: bool = True
+) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Same as ``build_rows`` but takes already-loaded ``Headline`` objects
+    instead of a CSV path - the entry point Day 8's ``sentiment.audit`` needs
+    to re-run the full alignment/price pipeline on headlines whose
+    timestamps it has reshuffled in memory, without round-tripping through
+    disk on every permutation. ``warn`` silences the per-row price-error
+    prints to stderr, which Day 8 does across hundreds of permutations where
+    a reshuffled timestamp landing on a session with no committed bar is
+    expected and not worth reporting each time."""
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
@@ -106,11 +112,19 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
             }
         )
 
-    if price_errors:
+    if price_errors and warn:
         for ticker, msg in price_errors:
             print(f"warning: {ticker}: {msg}", file=sys.stderr)
 
     return rows, unresolved
+
+
+def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
+    for headlines whose company was recognised but whose ticker could not be
+    fetched (see ``sentiment.tickers``)."""
+    headlines = read_csv(in_path)
+    return build_rows_from_headlines(headlines, live=live)
 
 
 def write_rows_csv(rows: list[dict], path: Path) -> None:
