@@ -12,9 +12,9 @@ The hard part is not the model, it is the timestamp alignment. A headline stampe
 
 ## Correctness gate
 
-Shuffled-timestamp control: randomise headline times and the signal must disappear. Runs in CI, not once by hand.
+Shuffled-timestamp control: randomise headline times and the signal must disappear. Runs in CI, not once by hand - `tests/test_audit.py::test_run_shuffle_audit_passes_on_the_real_committed_fixture` is part of the regular `pytest` run, not a script you have to remember to execute.
 
-This is the test that decides whether the repo is finished. A result that has not passed it is a draft.
+This is the test that decides whether the repo is finished. A result that has not passed it is a draft. As of Day 8, it passes: see Findings below for what "passes" can and can't honestly claim here, given that Day 5-7 already found no real signal for a leak to hide inside.
 
 ## Data sources
 
@@ -77,8 +77,14 @@ python -m sentiment.overlay
 python -m sentiment.overlay --live
 python -m sentiment.overlay --window-before 8 --window-after 2
 
-# Day 8 (not built yet): the leakage/audit pass (shuffle headline timestamps,
-# confirm the signal disappears) plus a "why this might be spurious" section.
+# Day 8: shuffled-timestamp leakage audit. Re-pairs each headline's (fixed)
+# VADER score with 500 random re-timings and checks the correctly-timestamped
+# correlation isn't a significant outlier against that shuffled null. Exit
+# code 0 = pass (no evidence of a timing-dependent leak), 1 = fail or
+# inconclusive.
+python -m sentiment.audit
+python -m sentiment.audit --n-shuffles 1000 --seed 1
+python -m sentiment.audit --live
 ```
 
 No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
@@ -136,6 +142,12 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 
 `cumulative_abnormal_return.png` aligns each resolved headline to trading-day offsets from its own aligned session (0 = event day) and cumulates abnormal return (vs the equal-weighted proxy) across the default window (-5 to +1 trading days), averaged separately across the high- and low-magnitude groups. The honest result is **not** a clean event-day reaction: the high-magnitude group's mean CAR is already running positive (+2.1% at offset -5) well before offset 0, because two of the three tickers (Great Eastern Shipping, Max Financial) were already in an uptrend before their headline appeared - the group's CAR trajectory reflects pre-existing momentum in 2 of 3 names, not a reaction to news, and Fortis Healthcare's steep decline (the one name where the headline plausibly *should* have mattered, in the wrong direction) is outvoted by the other two in a 3-headline average. With n=3, this cannot support any claim about what high-magnitude sentiment headlines do to abnormal returns on this fixture - the chart is descriptive, and the number of trading days actually observed at each offset varies (documented in `average_car_by_offset`'s docstring): offset +1 has fewer contributing headlines than offset 0, because Tuesday-aligned headlines' next session had not traded yet in this fixture, the same gap Day 5/6 already hit.
 
+**Day 8 - shuffled-timestamp leakage audit.** `sentiment/audit.py` implements the correctness gate above as a permutation significance test, not just a one-off script: `shuffle_published_at` randomly re-times every headline (titles and links stay put, only `published_at` moves), `sentiment.correlate.build_rows_from_headlines` (a small refactor of Day 5's `build_rows`, now reachable without a scratch CSV) re-aligns and re-prices each shuffle through the *real* leak-free pipeline, and the contemporaneous correlation is recomputed 500 times to build a null distribution. The correctly-timestamped `r=-0.185` (n=23) sits at the 87th-91st percentile of `|shuffled r|` across five different seeds (two-sided p between 0.086 and 0.130, always above 0.05) - not distinguishable from a randomly re-timed pairing, so the gate passes.
+
+That pass is honestly weaker evidence than it sounds, and is exactly the "why this might be spurious" case this day exists to write down: Day 5-7 already found no real correlation to begin with (the CI already crossed zero), so a shuffle test confirming "still no correlation" is close to a tautology - it could not have failed in an interesting way on this fixture. A shuffle audit only has teeth against a correlation worth being suspicious of in the first place. To prove the mechanism itself works rather than just rubber-stamping an already-null result, `tests/test_audit.py::test_run_shuffle_audit_detects_a_deliberately_leaky_alignment` builds a synthetic 12-headline case with a planted, perfect signal (`r=1.0`) via a deliberately broken alignment that pairs each headline with its own calendar day's return instead of Day 4's leak-free next-session rule - exactly the look-ahead mistake NEXT_STEPS.md warns about, and confirmed separately (`test_the_leaky_scenarios_headlines_would_not_replicate_under_real_alignment`) to be a mistake the real `align_headline` does not make, since all twelve headlines are intraday and the real rule rolls every one forward to the next trading day. Against that planted leak, the same shuffle machinery drives the null distribution's mean `|r|` down to ~0.24 and reports `p<=0.05` on every seed tried - it does catch a real leak when one exists, which is the only way "this test passes" is worth anything.
+
+There is also a real, named gap in what this methodology can catch at all: a shuffle that only re-times headlines cannot detect a leak that does not route through `published_at` - for instance, a bug where the sentiment score was itself computed from price/return data rather than headline text would recompute consistently under any timestamp and the correlation would survive every shuffle untouched. This repo's actual scorer (`sentiment.vader_score.score_headline`) only ever reads headline text, never a date or a return, so that specific failure mode does not apply here - but it is a limitation of the audit technique, not something this test rules out in general, and is recorded as such below rather than implied away by a green checkmark.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -171,6 +183,9 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 - Day 7's "market" is a proxy, not a real benchmark: the equal-weighted mean return of the same 23-ticker universe Day 5 resolved headlines against, because no free NSE index fixture (NIFTY 50 or similar) is committed to this repo. Abnormal return here means "in excess of this specific 23-name sample," which is itself sentiment-selected, not "in excess of the market" in the usual sense - a real index would need a new data source wired in first.
 - The cumulative abnormal return chart's high-magnitude group has n=3 - the same 3 headlines Day 5's event study already used, because they are the only ones in this fixture that are not saturated at `compound = 0.296`. A 3-headline average cannot support a causal claim about sentiment and abnormal returns; the chart is a descriptive trajectory, not a tested effect, and one bad-fit case (Fortis Healthcare, see Findings) is outvoted by two better-fit ones in the average.
 - The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
+- Day 8's shuffled-timestamp audit passing is weaker evidence than a green checkmark suggests: Day 5-7 already found no real correlation on this fixture, so there was no inflated signal for a leak to be hiding inside, and the shuffle test could not have failed in an interesting way here. It is a meaningful check that the gate's *mechanism* works (see the synthetic planted-leak test in `tests/test_audit.py`), not independent proof that this specific result is leak-free - that proof comes from Day 4's `leak_free()` invariant holding by construction, not from the shuffle.
+- The shuffle audit can only catch a leak that routes through `published_at`. A bug where the sentiment score itself were derived from price or return data (instead of headline text) would survive every shuffle untouched, because both sides of the correlation would keep being recomputed consistently from whatever timestamp a given run assigns. This repo's VADER scorer only reads headline text, so that failure mode doesn't apply today, but it is a named blind spot of this audit technique, not something it can rule out in general.
+- The permutation p-value depends on which of the 23 resolved headlines' sessions a shuffle happens to land on a date with no committed price bar (it drops that shuffle's headline rather than crashing) - at `n_shuffles=500` this was stable across five tried seeds (p between 0.086 and 0.130), but it is a Monte Carlo estimate, not an exact value, and a different seed or a much smaller `--n-shuffles` could occasionally land closer to the 0.05 line.
 
 ## Where this sits
 
