@@ -36,7 +36,7 @@ import csv
 import sys
 from pathlib import Path
 
-from sentiment.headline import read_csv
+from sentiment.headline import Headline, read_csv
 from sentiment.market_hours import align_headline
 from sentiment.prices import PriceFetchError, bar_on, load_bars, next_session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
@@ -62,11 +62,27 @@ ROW_FIELDNAMES = [
 ]
 
 
-def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+def _leak_free_session_date(published_at):
+    return align_headline(published_at).session_date
+
+
+def build_rows_from_headlines(
+    headlines: list[Headline],
+    live: bool = False,
+    align_fn=_leak_free_session_date,
+    verbose: bool = True,
+) -> tuple[list[dict], list[tuple[str, str]]]:
     """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
     for headlines whose company was recognised but whose ticker could not be
-    fetched (see ``sentiment.tickers``)."""
-    headlines = read_csv(in_path)
+    fetched (see ``sentiment.tickers``).
+
+    ``align_fn`` maps a headline's ``published_at`` to the session ``date``
+    its return is paired against; it defaults to Day 4's leak-free alignment.
+    Day 8's audit CLI (``sentiment.audit``) swaps it out to replay the same
+    pipeline against a different (deliberately non-leak-free) alignment, and
+    against repeated timestamp shuffles - both need this as a function of
+    headlines already in memory, not a path to re-read from disk each time.
+    """
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
@@ -80,18 +96,18 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
             unresolved.append((h.title, company))
             continue
 
-        alignment = align_headline(h.published_at)
+        session_date = align_fn(h.published_at)
         try:
             bars = load_bars(ticker, live=live)
         except PriceFetchError as exc:
             price_errors.append((ticker, str(exc)))
             continue
 
-        session_bar = bar_on(bars, alignment.session_date)
+        session_bar = bar_on(bars, session_date)
         if session_bar is None:
-            price_errors.append((ticker, f"no bar for session_date {alignment.session_date}"))
+            price_errors.append((ticker, f"no bar for session_date {session_date}"))
             continue
-        lagged_bar = next_session_bar(bars, alignment.session_date)
+        lagged_bar = next_session_bar(bars, session_date)
 
         scored = score_headline(h)
         rows.append(
@@ -99,18 +115,25 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
                 "title": h.title,
                 "company": company,
                 "ticker": ticker,
-                "session_date": alignment.session_date.isoformat(),
+                "session_date": session_date.isoformat(),
                 "compound": scored.compound,
                 "contemporaneous_return": session_bar.session_return,
                 "lagged_return": lagged_bar.session_return if lagged_bar else None,
             }
         )
 
-    if price_errors:
+    if price_errors and verbose:
         for ticker, msg in price_errors:
             print(f"warning: {ticker}: {msg}", file=sys.stderr)
 
     return rows, unresolved
+
+
+def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Return (rows, unresolved) for the headlines stored at ``in_path`` -
+    see ``build_rows_from_headlines`` for the actual per-headline logic."""
+    headlines = read_csv(in_path)
+    return build_rows_from_headlines(headlines, live=live)
 
 
 def write_rows_csv(rows: list[dict], path: Path) -> None:
