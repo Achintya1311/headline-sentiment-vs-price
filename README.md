@@ -12,9 +12,11 @@ The hard part is not the model, it is the timestamp alignment. A headline stampe
 
 ## Correctness gate
 
-Shuffled-timestamp control: randomise headline times and the signal must disappear. Runs in CI, not once by hand.
+Shuffled-timestamp control: randomise headline times and the signal must disappear. Runs in CI (`.github/workflows/ci.yml`, `python -m sentiment.audit`), not once by hand.
 
 This is the test that decides whether the repo is finished. A result that has not passed it is a draft.
+
+Day 5-7's result on real data is already a null one, which is exactly the case this gate cannot test by shuffling real data alone - there is no signal there to lose. So the gate that actually runs in CI plants a synthetic, deterministic sentiment/return relationship first (so there is something to lose), confirms the real alignment-and-correlation code detects it, *then* shuffles timestamps and confirms it collapses. See `sentiment/audit.py` and Findings below.
 
 ## Data sources
 
@@ -77,8 +79,14 @@ python -m sentiment.overlay
 python -m sentiment.overlay --live
 python -m sentiment.overlay --window-before 8 --window-after 2
 
-# Day 8 (not built yet): the leakage/audit pass (shuffle headline timestamps,
-# confirm the signal disappears) plus a "why this might be spurious" section.
+# Day 8: shuffled-timestamp leakage control, the project's correctness gate.
+# Plants a synthetic, deterministic sentiment/return relationship, confirms
+# it's detected, shuffles headline timestamps, confirms it collapses - plus
+# an informational (non-gating) rerun of the same shuffle against the real
+# fixture. Exits non-zero (fails CI) if the planted signal is not detected
+# or does not collapse. Writes outputs/audit_<date>.md.
+python -m sentiment.audit
+python -m sentiment.audit --live       # informational half re-fetches real prices too
 ```
 
 No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
@@ -136,6 +144,27 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 
 `cumulative_abnormal_return.png` aligns each resolved headline to trading-day offsets from its own aligned session (0 = event day) and cumulates abnormal return (vs the equal-weighted proxy) across the default window (-5 to +1 trading days), averaged separately across the high- and low-magnitude groups. The honest result is **not** a clean event-day reaction: the high-magnitude group's mean CAR is already running positive (+2.1% at offset -5) well before offset 0, because two of the three tickers (Great Eastern Shipping, Max Financial) were already in an uptrend before their headline appeared - the group's CAR trajectory reflects pre-existing momentum in 2 of 3 names, not a reaction to news, and Fortis Healthcare's steep decline (the one name where the headline plausibly *should* have mattered, in the wrong direction) is outvoted by the other two in a 3-headline average. With n=3, this cannot support any claim about what high-magnitude sentiment headlines do to abnormal returns on this fixture - the chart is descriptive, and the number of trading days actually observed at each offset varies (documented in `average_car_by_offset`'s docstring): offset +1 has fewer contributing headlines than offset 0, because Tuesday-aligned headlines' next session had not traded yet in this fixture, the same gap Day 5/6 already hit.
 
+**Day 8 - shuffled-timestamp leakage control.** `sentiment/audit.py` is the correctness gate NEXT_STEPS.md and the "Correctness gate" section above commit to, wired into a new `.github/workflows/ci.yml` so it runs on every push, not once by hand. It runs two checks, and only the first is a gate:
+
+1. **Planted-signal control** (gates CI). Day 5-7's real result is already null, so shuffling real timestamps alone cannot demonstrate anything - there is no signal there to lose. So this builds 60 synthetic headlines on 60 distinct trading days, each timestamped pre-open, and plants a deterministic relationship (`return = 0.05 * compound + small noise`) keyed to the session each headline's *own* timestamp resolves to via the real `sentiment.market_hours.align_headline` - a real, if synthetic, signal running through the real alignment code. Unshuffled: r=+0.998, 95% CI [+0.996, +0.999], n=60 - clearly detected. Reassigning every timestamp to a *different* headline's timestamp (`shuffle_timestamps`, a random derangement via Sattolo's algorithm, so nothing keeps its own timestamp by chance) and rebuilding the same rows: r=-0.103, 95% CI [-0.348, +0.155], n=60 - the signal collapses, as it must, because the planted return was only ever tied to *which session the headline's own timestamp resolved to*. 300 trials across 30 different random seeds confirmed the gate with 60 synthetic headlines is not a fluke of one seed (0/300 failed the detect/collapse thresholds); the same check with only 40 headlines failed 2/300 trials, which is why the committed default uses 60.
+2. **Real-fixture control** (informational, never a gate). The identical shuffle, run through the real pipeline (`sentiment.correlate.build_rows_from_headlines`) against the real 23-headline fixture and the real committed price fixtures: unshuffled r=-0.185 (Day 5's own number), shuffled r=-0.267, both comfortably inside a CI that contains zero. Still null after shuffling is the expected, uninformative result on data that was already null - it is reported for completeness, not treated as the leakage proof. See "Why this might be spurious" below for what *would* make this null result wrong even though it passed every check here.
+
+Verified: 139/152 tests pass (10 new for `sentiment.audit`, all passing; the 13 pre-existing failures are the same FinBERT/torch tests Day 3 documented - torch still cannot be installed in this sandbox, unrelated to this change). `python -m sentiment.audit` was run by hand and exits 0. The new CI workflow itself could not be executed in this sandbox (no GitHub Actions runner here, and the FinBERT step it adds needs network this sandbox doesn't have) - it was reviewed by hand and validated as syntactically correct YAML, but its first real run will happen on GitHub's own runners, which do have network, on the next push. That is a real, named gap, not a quiet assumption.
+
+## Why this might be spurious
+
+Passing the leakage gate above proves the *pipeline* isn't fooling itself with look-ahead. It says nothing about whether a future non-null result on real data would be a genuine market relationship rather than one of these, all of which this repo's own results make concrete rather than hypothetical:
+
+- **The gate only tests one failure mode.** `sentiment.audit` catches look-ahead through the timestamp-to-session link specifically. A bug that leaked information some other way - e.g. if `sentiment.tickers.resolve` or `sentiment.prices.load_bars` ever used a price *after* the headline by a path that doesn't go through `session_date` - would sail through this control untouched. A green gate is necessary, not sufficient.
+- **Multiple testing across the whole project, not just one run.** This repo has already tried VADER and FinBERT (Day 2/3), contemporaneous and lagged returns (Day 5), two event-study thresholds' worth of grouping (Day 5/7), and a regression (Day 6) - each a fresh chance for one of them to clear a significance bar by chance alone. None did here, but if one eventually does, it needs to be asked whether it would have been reported as "the finding" if it had come up positive while the others stayed null, which is exactly how multiple testing manufactures a result that isn't there.
+- **The dominant headline shape saturates the predictor.** 17 of 23 resolved headlines in Day 5's fixture share the identical VADER compound (0.296) because they are all the same "Share Price Highlights" liveblog template. Any future correlation computed on a wider scrape that still leans on this one outlet will inherit the same low-resolution predictor unless the headline mix genuinely diversifies - a bigger n alone would not fix this.
+- **The universe is sentiment-selected, not random.** `sentiment/tickers.py` only resolves headlines that already name one company prominently enough to write a "Share Price Highlights" title or a "shares rise/fall" headline about - which is itself correlated with that company having had a noteworthy, prominent trading day. Testing sentiment against return on a sample selected partly *by* return-worthy news is a subtler version of the look-ahead this repo otherwise guards against carefully, and no control in this repo currently addresses it.
+- **The proxy benchmark is drawn from the same selected sample.** Day 7's "abnormal" return is excess over the equal-weighted mean of the same 23-ticker, sentiment-selected universe, not a real NSE index (see Day 7 Limitations) - a stock's "abnormal" return here partly reflects how it moved relative to other stocks picked by the same selection bias, not the market.
+- **A single scrape, one or two calendar sessions.** Every number in Days 5-7 comes from one scrape run (28-29 Sep 2026) against one price-fixture snapshot. A relationship that shows up on a wider date range scraped later needs to be treated as a new, independent result, not a confirmation of this one - a single short window cannot distinguish a real effect from one calendar-specific coincidence (an earnings season, a single market-wide news day, etc.).
+- **VADER's documented blind spot cuts both ways.** Day 2/3/7 all found VADER misreads finance-specific phrasing (routine corporate actions score positive, "forensic audit" scores positive via "allows... proceed"). A future correlation using VADER's compound could show "signal" that is really VADER's lexicon noise correlating by coincidence with whatever those mis-scored headlines' stocks happened to do - the kind of artifact a shuffled-timestamp control does not catch, because the scoring itself, not the alignment, is where the leak would be.
+
+None of this is a reason to distrust the honest null results already reported - it is the opposite: a list of what a *positive* result from this pipeline would still need to rule out before being believed, so that if one ever shows up, it gets the same scrutiny this section describes rather than being reported as a clean finding.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -171,6 +200,8 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 - Day 7's "market" is a proxy, not a real benchmark: the equal-weighted mean return of the same 23-ticker universe Day 5 resolved headlines against, because no free NSE index fixture (NIFTY 50 or similar) is committed to this repo. Abnormal return here means "in excess of this specific 23-name sample," which is itself sentiment-selected, not "in excess of the market" in the usual sense - a real index would need a new data source wired in first.
 - The cumulative abnormal return chart's high-magnitude group has n=3 - the same 3 headlines Day 5's event study already used, because they are the only ones in this fixture that are not saturated at `compound = 0.296`. A 3-headline average cannot support a causal claim about sentiment and abnormal returns; the chart is a descriptive trajectory, not a tested effect, and one bad-fit case (Fortis Healthcare, see Findings) is outvoted by two better-fit ones in the average.
 - The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
+- The leakage gate's real-fixture control (Day 8) is informational, not proof: shuffling timestamps on data that already shows no correlation cannot demonstrate the pipeline is leak-free, because there was no signal there to lose either way. The actual gate is the synthetic planted-signal control; see "Why this might be spurious" for the full list of failure modes the gate does not cover (it only tests the timestamp-to-session alignment path, not the scorer's own blind spots, the universe's selection bias, or multiple testing across days).
+- The new CI workflow (`.github/workflows/ci.yml`) has never actually run: this sandbox has no GitHub Actions runner, and the FinBERT install step it adds needs network access this sandbox doesn't have (the committed `requirements.txt` deliberately excludes torch for the same reason - see Day 3). The workflow file was reviewed and validated as syntactically correct YAML, but whether `pytest`, the FinBERT model download, and `python -m sentiment.audit` actually succeed together on GitHub's runners is unverified until the next push exercises it for real.
 
 ## Where this sits
 

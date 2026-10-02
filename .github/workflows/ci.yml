@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          # CPU-only wheel, per README - FinBERT needs torch, and this
+          # runner (unlike the dev sandbox) has network to fetch it.
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Tests
+        run: pytest -q
+
+      - name: Pipeline audit - shuffled-timestamp leakage control
+        # The project's actual correctness gate (see README "Correctness
+        # gate" and NEXT_STEPS.md "Done when"): a planted sentiment/return
+        # relationship must be detected before a timestamp shuffle and must
+        # collapse after one. Fails the build like a broken test would, not
+        # just a warning - see sentiment/audit.py.
+        run: python -m sentiment.audit
