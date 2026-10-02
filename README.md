@@ -14,7 +14,9 @@ The hard part is not the model, it is the timestamp alignment. A headline stampe
 
 Shuffled-timestamp control: randomise headline times and the signal must disappear. Runs in CI, not once by hand.
 
-This is the test that decides whether the repo is finished. A result that has not passed it is a draft.
+**Built, Day 8.** `sentiment/audit.py` (`python -m sentiment.audit`) runs it as a permutation test: shuffle `published_at` across the 23 resolved headlines hundreds of times, recompute the real alignment -> session_date -> return pipeline for each shuffle, and check whether the real, correctly-aligned r is a statistical outlier against that shuffled null (two-sided permutation p-value). `tests/test_audit.py::test_audit_on_committed_fixture_finds_no_leak` asserts this in CI on every run, not once by hand; `test_shuffle_destroys_a_real_timestamp_mediated_signal` is the positive control proving the test can actually tell a real, timestamp-mediated signal apart from noise, using data engineered to contain one.
+
+This is the test that decides whether the repo is finished. A result that has not passed it is a draft. On the committed fixture it passes (p=0.263 at the default seed) - see Day 8 Findings and "Why this might be spurious" for what that does and does not prove.
 
 ## Data sources
 
@@ -77,8 +79,14 @@ python -m sentiment.overlay
 python -m sentiment.overlay --live
 python -m sentiment.overlay --window-before 8 --window-after 2
 
-# Day 8 (not built yet): the leakage/audit pass (shuffle headline timestamps,
-# confirm the signal disappears) plus a "why this might be spurious" section.
+# Day 8: the leakage audit - shuffle headline timestamps, confirm the
+# sentiment/return signal disappears. Offline by default, same fixtures as
+# Day 5. Exits 1 if the real correlation is a statistical outlier against
+# the shuffled-timestamp null (i.e. "leaking"); runs in CI via tests/test_audit.py,
+# not just by hand.
+python -m sentiment.audit
+python -m sentiment.audit --live
+python -m sentiment.audit --permutations 2000 --seed 1
 ```
 
 No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
@@ -136,6 +144,30 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 
 `cumulative_abnormal_return.png` aligns each resolved headline to trading-day offsets from its own aligned session (0 = event day) and cumulates abnormal return (vs the equal-weighted proxy) across the default window (-5 to +1 trading days), averaged separately across the high- and low-magnitude groups. The honest result is **not** a clean event-day reaction: the high-magnitude group's mean CAR is already running positive (+2.1% at offset -5) well before offset 0, because two of the three tickers (Great Eastern Shipping, Max Financial) were already in an uptrend before their headline appeared - the group's CAR trajectory reflects pre-existing momentum in 2 of 3 names, not a reaction to news, and Fortis Healthcare's steep decline (the one name where the headline plausibly *should* have mattered, in the wrong direction) is outvoted by the other two in a 3-headline average. With n=3, this cannot support any claim about what high-magnitude sentiment headlines do to abnormal returns on this fixture - the chart is descriptive, and the number of trading days actually observed at each offset varies (documented in `average_car_by_offset`'s docstring): offset +1 has fewer contributing headlines than offset 0, because Tuesday-aligned headlines' next session had not traded yet in this fixture, the same gap Day 5/6 already hit.
 
+**Day 8 - leakage audit (shuffled-timestamp permutation control).** `sentiment/audit.py` runs the exact test NEXT_STEPS.md's "Done when" names: shuffle `published_at` across the 23 headlines Day 5 resolves to a ticker, re-run the same `align_headline` -> `session_date` -> price-bar pipeline Day 5 uses, and recompute the contemporaneous Pearson r for each shuffle. 500 shuffles (seed 0, the CLI default) build a null distribution; the real, correctly-aligned r is compared against it with a two-sided permutation p-value, and `tests/test_audit.py` asserts the result in CI rather than relying on a human running the CLI once.
+
+On the committed fixture: real r = -0.185 (n=23, same as Day 5), shuffled-null mean r = +0.110 (sd 0.127), two-sided permutation p = 0.263 - **PASS**, the real result is not distinguishable from what a broken timestamp link alone produces. Only 1.4% of the 500 shuffles themselves came back with a 95% CI excluding zero, close to the ~5% a correctly-calibrated null should produce by chance at this threshold.
+
+This null distribution is not as free as "500 random shuffles" sounds, and that matters for how much the PASS above is worth: Day 4's own finding already established that every headline in this fixture was scraped within about a 24-hour window, so `align_headline` only ever assigns one of **two** possible session dates (Monday 28 Sep or Tuesday 29 Sep). Shuffling `published_at` therefore does not draw returns from a wide calendar of possible sessions - for any one ticker it only ever reassigns between that ticker's own Monday bar and its own Tuesday bar (or leaves a headline on the session it already had). The permutation test is real and the PASS is honest, but it is a narrower, weaker control than "shuffle across a full month of trading days" would be - see Limitations and "Why this might be spurious" below.
+
+A synthetic positive control (`tests/test_audit.py::test_shuffle_destroys_a_real_timestamp_mediated_signal`) proves the audit mechanism itself works: 8 engineered headlines, each on its own trading day, with compound built to track that day's return exactly (r=1.0 under the real timestamps) - shuffling collapses that to a null the real r=1.0 is a clear outlier against (p<0.05), confirming the test can tell a genuine timestamp-mediated signal apart from noise when one is actually there, not just report PASS unconditionally.
+
+python -m sentiment.audit was run by hand against the committed fixture (matching the numbers above) and with `--live` once, which legitimately re-fetched all 23 tickers' price fixtures from Yahoo Finance's public endpoint over this sandbox's proxy and overwrote them on disk with current data - reverted before committing, since re-pricing every satellite's shared fixture is out of scope for a one-day chunk and would silently change numbers every prior day's README cites.
+
+## Why this might be spurious
+
+A single honest list of reasons the Day 5-8 null result should not be read as "sentiment has no relationship to price here," collected in one place rather than scattered across each day's own Findings:
+
+- **The sample is one feed, two trading sessions, 23 names.** Every number in this pipeline - the correlation, the regression, the overlay, and now the audit's own permutation null - is built from headlines scraped in roughly one 24-hour window. A null result from a sample this narrow is weak evidence of anything; it mostly shows this fixture, as scraped, cannot yet distinguish "no relationship" from "not enough independent variation to find one."
+- **Most of the sentiment signal is one saturated value.** 17 of 23 resolved headlines share the identical VADER compound (0.296), a consequence of the "Share Price Highlights" liveblog template, not of 17 companies genuinely having near-identical sentiment. Any correlation computed here is really being driven by the 6 headlines with a distinct score, with the other 17 acting as a fixed offset.
+- **The audit's own null distribution inherits that narrowness.** As Day 8's Findings above spell out, shuffling timestamps across a 2-session sample only ever resamples between two bars per ticker - a much weaker randomisation than shuffling across a real multi-week calendar would be. A leak that only shows up across a wider date range (for example, a bug that looks ahead by several days) would not necessarily be caught by this audit on this fixture, even though the "Done when" test technically passes.
+- **A permutation test's power depends on sample size, and n=23 is small.** The real r (-0.185) sitting inside the shuffled null is consistent with "no signal," but it is equally consistent with "a small real signal this test does not have the power to detect." PASS here means "not distinguishable from noise with this much data," not "proven to be noise."
+- **The compound-return pairing is cross-sectional, not a time series.** Day 5 already noted this: 23 different companies on 1-2 calendar dates is a weaker design than tracking one company's sentiment and returns over months, and a cross-sectional correlation can be moved by one or two names regardless of the rest.
+- **VADER itself is the wrong tool for this corpus**, independent of all of the above - Day 2/3/7 already found it misses finance-specific phrasing and scores a litigation headline about Fortis Healthcare as strongly positive while the stock fell double digits that month. A null correlation built on a sentiment score with known, documented errors on exactly this kind of headline cannot tell you much about whether sentiment-and-price are related in general - only whether *this* score, on *this* data, is related.
+- **No multiple-testing correction across days.** Day 5's contemporaneous and lagged correlations, Day 6's regression, Day 7's event study and CAR chart, and Day 8's own permutation test all probe variations of the same underlying hypothesis on overlapping data. None of them individually p-hacks, but reading the fact that *none* of five related tests found a signal as five independent confirmations would overstate the evidence - they mostly share the same underlying sample's limitations.
+
+None of this is a reason to distrust the specific PASS reported above - the shuffle test did what it was built to do, on real data, and the synthetic positive control shows it would have caught a real timestamp-mediated signal if the fixture contained one. It is a reason to read "the signal disappeared under shuffling" as "this fixture cannot support a claim either way," which is the same honest conclusion Day 5-7 already reached from different angles.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -171,6 +203,9 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 - Day 7's "market" is a proxy, not a real benchmark: the equal-weighted mean return of the same 23-ticker universe Day 5 resolved headlines against, because no free NSE index fixture (NIFTY 50 or similar) is committed to this repo. Abnormal return here means "in excess of this specific 23-name sample," which is itself sentiment-selected, not "in excess of the market" in the usual sense - a real index would need a new data source wired in first.
 - The cumulative abnormal return chart's high-magnitude group has n=3 - the same 3 headlines Day 5's event study already used, because they are the only ones in this fixture that are not saturated at `compound = 0.296`. A 3-headline average cannot support a causal claim about sentiment and abnormal returns; the chart is a descriptive trajectory, not a tested effect, and one bad-fit case (Fortis Healthcare, see Findings) is outvoted by two better-fit ones in the average.
 - The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
+- Day 8's shuffled-timestamp audit has less statistical power than "500 random shuffles" suggests: because every headline was scraped within roughly one 24-hour window, `align_headline` only ever assigns one of two session dates, so a shuffle only ever resamples each ticker between its own two bars rather than across a real trading calendar. A leak that only manifests across a wider date range would not necessarily be caught by this audit on this fixture, even though it passes. See "Why this might be spurious" for the full accounting.
+- A permutation p-value answers "is this distinguishable from the shuffled null," not "is there no relationship." At n=23, the audit's PASS is honest but has limited power - it rules out a signal large enough to stand out against this specific, narrow null, not a smaller one this sample is too small to detect.
+- The audit's own "own-CI-excludes-zero rate" (how often a single shuffled run looks significant by chance, nominally ~5% at a 95% CI) is itself computed from the same narrow, saturated-compound sample as everything else here, so it should be read as a rough diagnostic, not a precisely calibrated Type-I error rate.
 
 ## Where this sits
 
