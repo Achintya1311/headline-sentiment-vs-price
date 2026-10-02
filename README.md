@@ -12,7 +12,7 @@ The hard part is not the model, it is the timestamp alignment. A headline stampe
 
 ## Correctness gate
 
-Shuffled-timestamp control: randomise headline times and the signal must disappear. Runs in CI, not once by hand.
+Shuffled-timestamp control (`sentiment/leakage_audit.py`, Day 8): randomise headline times and the signal must disappear. Runs in CI via `tests/test_leakage_audit.py`, not once by hand. See Findings and "Why this result might be spurious" for what it currently finds and why a pass is a weaker verdict than it sounds while Day 6's own regression still has no variance to test with.
 
 This is the test that decides whether the repo is finished. A result that has not passed it is a draft.
 
@@ -77,8 +77,14 @@ python -m sentiment.overlay
 python -m sentiment.overlay --live
 python -m sentiment.overlay --window-before 8 --window-after 2
 
-# Day 8 (not built yet): the leakage/audit pass (shuffle headline timestamps,
-# confirm the signal disappears) plus a "why this might be spurious" section.
+# Day 8: ml-pipeline-audit. Reruns Day 5's correlation and Day 6's
+# out-of-sample regression against the same headlines with their timestamps
+# randomly shuffled (titles, tickers and sentiment scores untouched) - the
+# signal should not survive, and if it does, something other than real
+# timestamp alignment is driving the result. Deterministic (fixed seed) so
+# CI sees the same numbers on every run.
+python -m sentiment.leakage_audit
+python -m sentiment.leakage_audit --trials 1000 --seed 1
 ```
 
 No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
@@ -136,6 +142,24 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 
 `cumulative_abnormal_return.png` aligns each resolved headline to trading-day offsets from its own aligned session (0 = event day) and cumulates abnormal return (vs the equal-weighted proxy) across the default window (-5 to +1 trading days), averaged separately across the high- and low-magnitude groups. The honest result is **not** a clean event-day reaction: the high-magnitude group's mean CAR is already running positive (+2.1% at offset -5) well before offset 0, because two of the three tickers (Great Eastern Shipping, Max Financial) were already in an uptrend before their headline appeared - the group's CAR trajectory reflects pre-existing momentum in 2 of 3 names, not a reaction to news, and Fortis Healthcare's steep decline (the one name where the headline plausibly *should* have mattered, in the wrong direction) is outvoted by the other two in a 3-headline average. With n=3, this cannot support any claim about what high-magnitude sentiment headlines do to abnormal returns on this fixture - the chart is descriptive, and the number of trading days actually observed at each offset varies (documented in `average_car_by_offset`'s docstring): offset +1 has fewer contributing headlines than offset 0, because Tuesday-aligned headlines' next session had not traded yet in this fixture, the same gap Day 5/6 already hit.
 
+**Day 8 - ml-pipeline-audit (the leakage control).** `sentiment/leakage_audit.py` reruns Day 5's lagged correlation and Day 6's out-of-sample regression (`sentiment.correlate.build_rows_from_headlines`, extracted from `build_rows` so it can take headlines already shuffled in memory, never a scratch CSV) with headline timestamps randomly permuted among the same headlines - titles, tickers, and VADER scores stay exactly where they were, only *when* each headline is said to have happened moves, which is the one thing `align_headline` actually reads. Over 500 shuffled-timestamp trials (seed 0, deterministic - `tests/test_leakage_audit.py` asserts the exact numbers below on every CI run, not once by hand):
+
+- **Real run** (true timestamps) reproduces Day 5/6's own numbers exactly, because it reruns the identical pipeline unshuffled first: lagged r = +0.000, out-of-sample R² = +0.000 (train n=10, test n=5).
+- **Lagged r null distribution**: mean -0.262, range [-0.875, +0.464]. The real result sits at the 16th percentile - inside the middle 95%, not an outlier.
+- **Out-of-sample R² null distribution**: mean -6.723, range [-703.719, +0.546] - a wildly volatile spread, because out-of-sample R² computed on a 1-2 headline test split can swing enormously from one bad prediction. The real result sits at the 82nd percentile - also inside the middle 95%.
+
+Both land inside the 95% band `tests/test_leakage_audit.py::test_leakage_gate_the_real_result_is_not_an_outlier_against_its_shuffled_null` checks, so the leakage gate passes: nothing about this fixture's result depends on something a random timestamp reassignment could also produce. See "Why this result might be spurious" below for why a passing gate here is a weaker verdict than it sounds, given Day 6 already found the real run has no variance to test with in the first place.
+
+## Why this result might be spurious
+
+The leakage control passing is not the same thing as "this project found a trustworthy signal" - it is one necessary check, not a sufficient one, and this cycle's own numbers show exactly why:
+
+- **There is no real signal here to leak.** Day 6 already found that all 15 headlines with a computable next-day return share the identical VADER compound (0.296) - a selection artifact, not a market finding. A leakage test can only confirm that an *existing* apparent effect doesn't survive randomisation; run against a result that was already degenerate before the shuffle, "the signal disappeared" is true but unfalsifiable - there was nothing to disappear. This control becomes a meaningful check only once a future scrape produces usable rows with actual sentiment variance to test.
+- **The null distribution itself is unstable in a way a future positive result should be read against.** Out-of-sample R² ranged from -703.719 to +0.546 across 500 shuffles - driven entirely by how badly a 1-2 point test split can be mispredicted, nothing about news or markets. If a later run reports a large *positive* out-of-sample R² with a test split this small, that number deserves exactly the same suspicion as the large negative ones seen here, not excitement - small-n out-of-sample R² is simply a high-variance statistic, independent of whether sentiment means anything.
+- **The lagged-r null is centered at -0.262, not 0** - that is not evidence that shuffled news predicts falling prices. With most of the sample pinned to one VADER score, the correlation on any given trial is dominated by wherever the handful of non-saturated headlines (Fortis Healthcare's compound +0.70 paired with its real, sizeable price move chief among them) happen to land. The same high-leverage-headline instability that produced a negative-skewed null here could just as easily produce a false *positive* signal in a different sample or a different random seed - it is a property of the sample size and shape, not of news sentiment.
+- **The shuffle only redistributes headlines across the two calendar days this fixture actually has.** All 50 scraped headlines were published on 28-29 Sep 2026 (Day 1's Findings), so permuting their timestamps can only reassign a headline between those two sessions - it cannot test whether a result would survive being shuffled across the full month the price fixtures span. A leak that worked through a slower, calendar-scale artifact (a sustained market-wide drift the model failed to remove, per the hub's own description of what this control is meant to catch) would not be caught by this version of the test. Widening the headline scrape window is a prerequisite for a stronger version of this control, not only for a more informative regression.
+- **The entire null result traces back to one VADER artifact, not to market efficiency.** 17 of 23 resolved headlines score the identical 0.296 because of the repeated "Share Price Highlights" template (Day 2/5's own finding), not because sentiment genuinely carries no information across this sample. This cycle's honest finding is methodological - the audit harness is built, deterministic, and currently finds no outlier in either direction - rather than substantive: no claim about whether headline sentiment predicts NSE returns can be made from this fixture yet, in either direction.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -171,6 +195,7 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 - Day 7's "market" is a proxy, not a real benchmark: the equal-weighted mean return of the same 23-ticker universe Day 5 resolved headlines against, because no free NSE index fixture (NIFTY 50 or similar) is committed to this repo. Abnormal return here means "in excess of this specific 23-name sample," which is itself sentiment-selected, not "in excess of the market" in the usual sense - a real index would need a new data source wired in first.
 - The cumulative abnormal return chart's high-magnitude group has n=3 - the same 3 headlines Day 5's event study already used, because they are the only ones in this fixture that are not saturated at `compound = 0.296`. A 3-headline average cannot support a causal claim about sentiment and abnormal returns; the chart is a descriptive trajectory, not a tested effect, and one bad-fit case (Fortis Healthcare, see Findings) is outvoted by two better-fit ones in the average.
 - The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
+- Day 8's shuffled-timestamp leakage control can only redistribute headlines across the two calendar days this fixture's scrape actually covers (28-29 Sep 2026) - it cannot test whether a result would survive being shuffled across the full month the price fixtures span, so a slower, calendar-scale leak would not be caught by this version of the test. See "Why this result might be spurious" for the full accounting, including that the real run's R²=0.000 means the control currently has no actual signal to disprove.
 
 ## Where this sits
 
