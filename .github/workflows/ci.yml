@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          # CPU-only wheel (see requirements.txt) - the default PyPI torch
+          # build drags in CUDA libs this CLI-only, zero-spend project never
+          # uses. Needed for the Day 3 FinBERT tests; everything else here
+          # is fixture-first and does not touch the network.
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Tests
+        run: pytest -q
+
+      - name: Leakage audit - shuffled headline timestamps must not predict returns
+        # The correctness gate this repo's README calls out by name: "This is
+        # the test that decides whether the repo is finished. A result that
+        # has not passed it is a draft." Runs the same check tests/test_audit.py
+        # asserts, but as its own build step so a regression here is never
+        # buried in a 150-test pytest summary. Fails the build like a broken
+        # test would, not a warning (see stockstalker/audit.py for the sibling
+        # pattern this follows).
+        run: python -m sentiment.audit
