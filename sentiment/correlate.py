@@ -36,9 +36,9 @@ import csv
 import sys
 from pathlib import Path
 
-from sentiment.headline import read_csv
+from sentiment.headline import Headline, read_csv
 from sentiment.market_hours import align_headline
-from sentiment.prices import PriceFetchError, bar_on, load_bars, next_session_bar
+from sentiment.prices import Bar, PriceFetchError, bar_on, load_bars, next_session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
 from sentiment.tickers import resolve
 from sentiment.vader_score import score_headline
@@ -66,7 +66,24 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
     """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
     for headlines whose company was recognised but whose ticker could not be
     fetched (see ``sentiment.tickers``)."""
-    headlines = read_csv(in_path)
+    return build_rows_from_headlines(read_csv(in_path), live=live)
+
+
+def build_rows_from_headlines(
+    headlines: list[Headline],
+    live: bool = False,
+    price_cache: dict[str, list[Bar]] | None = None,
+) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Same pairing ``build_rows`` does, but against an in-memory headline
+    list rather than a CSV path - what Day 8's ``sentiment.audit`` needs to
+    re-run this pipeline against headlines whose timestamps it has shuffled,
+    without a round trip through disk.
+
+    ``price_cache`` is an optional ticker -> bars dict to read from and fill
+    in, shared across many calls (e.g. one audit run's worth of shuffles) so
+    the same ticker's fixture is not reloaded from disk every time; omitted
+    by default, which keeps ``build_rows``'s own behaviour unchanged.
+    """
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
@@ -81,11 +98,16 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
             continue
 
         alignment = align_headline(h.published_at)
-        try:
-            bars = load_bars(ticker, live=live)
-        except PriceFetchError as exc:
-            price_errors.append((ticker, str(exc)))
-            continue
+        if price_cache is not None and ticker in price_cache:
+            bars = price_cache[ticker]
+        else:
+            try:
+                bars = load_bars(ticker, live=live)
+            except PriceFetchError as exc:
+                price_errors.append((ticker, str(exc)))
+                continue
+            if price_cache is not None:
+                price_cache[ticker] = bars
 
         session_bar = bar_on(bars, alignment.session_date)
         if session_bar is None:
