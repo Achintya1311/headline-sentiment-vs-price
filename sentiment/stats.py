@@ -127,6 +127,20 @@ def mean_absolute_error(y_true: list[float], y_pred: list[float]) -> float:
     return sum(abs(yt - yp) for yt, yp in zip(y_true, y_pred)) / n
 
 
+def percentile_ci(values: list[float], ci: float = 0.95) -> tuple[float, float]:
+    """Two-sided percentile interval of ``values`` - e.g. the empirical null
+    distribution a permutation/shuffle test produces. Not model-based, so it
+    needs no assumption about the shape of ``values``' distribution."""
+    if not values:
+        raise ValueError("need at least one value")
+    tail = (1 - ci) / 2
+    ordered = sorted(values)
+    n = len(ordered)
+    lo = ordered[int(tail * n)]
+    hi = ordered[min(int((1 - tail) * n), n - 1)]
+    return lo, hi
+
+
 @dataclass(frozen=True)
 class BootstrapDiffResult:
     diff: float

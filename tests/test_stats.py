@@ -9,6 +9,7 @@ from sentiment.stats import (
     oos_r_squared,
     pearson_r,
     pearson_with_ci,
+    percentile_ci,
     r_squared,
 )
 
@@ -150,3 +151,29 @@ def test_mean_absolute_error_basic():
 def test_mean_absolute_error_requires_at_least_one_point():
     with pytest.raises(ValueError):
         mean_absolute_error([], [])
+
+
+def test_percentile_ci_contains_the_middle_of_a_known_distribution():
+    values = list(range(1, 101))  # 1..100
+    lo, hi = percentile_ci(values, ci=0.95)
+    # 95% interval should trim roughly the bottom/top 2.5 values each side.
+    assert lo == pytest.approx(3, abs=1)
+    assert hi == pytest.approx(98, abs=1)
+
+
+def test_percentile_ci_excludes_zero_when_the_distribution_never_crosses_it():
+    values = [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9]
+    lo, hi = percentile_ci(values)
+    assert lo > 0.0
+    assert hi > 0.0
+
+
+def test_percentile_ci_includes_zero_when_the_distribution_straddles_it():
+    values = [-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0]
+    lo, hi = percentile_ci(values)
+    assert lo <= 0.0 <= hi
+
+
+def test_percentile_ci_requires_at_least_one_value():
+    with pytest.raises(ValueError):
+        percentile_ci([])
