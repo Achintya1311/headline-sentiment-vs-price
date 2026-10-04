@@ -77,8 +77,12 @@ python -m sentiment.overlay
 python -m sentiment.overlay --live
 python -m sentiment.overlay --window-before 8 --window-after 2
 
-# Day 8 (not built yet): the leakage/audit pass (shuffle headline timestamps,
-# confirm the signal disappears) plus a "why this might be spurious" section.
+# Day 8: ml-pipeline-audit. Reruns Day 4's alignment + Day 5's pairing from
+# scratch against many randomly shuffled copies of the headline timestamps,
+# building a null distribution of the contemporaneous Pearson r and checking
+# whether the real-timestamp r is distinguishable from it.
+python -m sentiment.audit
+python -m sentiment.audit --n-shuffles 2000 --seed 1
 ```
 
 No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
@@ -136,6 +140,16 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 
 `cumulative_abnormal_return.png` aligns each resolved headline to trading-day offsets from its own aligned session (0 = event day) and cumulates abnormal return (vs the equal-weighted proxy) across the default window (-5 to +1 trading days), averaged separately across the high- and low-magnitude groups. The honest result is **not** a clean event-day reaction: the high-magnitude group's mean CAR is already running positive (+2.1% at offset -5) well before offset 0, because two of the three tickers (Great Eastern Shipping, Max Financial) were already in an uptrend before their headline appeared - the group's CAR trajectory reflects pre-existing momentum in 2 of 3 names, not a reaction to news, and Fortis Healthcare's steep decline (the one name where the headline plausibly *should* have mattered, in the wrong direction) is outvoted by the other two in a 3-headline average. With n=3, this cannot support any claim about what high-magnitude sentiment headlines do to abnormal returns on this fixture - the chart is descriptive, and the number of trading days actually observed at each offset varies (documented in `average_car_by_offset`'s docstring): offset +1 has fewer contributing headlines than offset 0, because Tuesday-aligned headlines' next session had not traded yet in this fixture, the same gap Day 5/6 already hit.
 
+**Day 8 - ml-pipeline-audit leakage control.** `sentiment/audit.py` implements the "done when" test NEXT_STEPS.md and the Correctness gate above commit to: shuffle headline timestamps and confirm the signal disappears. It is not a generic permutation test bolted onto the final numbers - every shuffle reruns the *real* pipeline, Day 4's `align_headline` and Day 5's `correlate.rows_from_headlines` (refactored to take already-loaded headlines so a shuffle doesn't need to round-trip through a CSV), against a copy of the headlines with `published_at` permuted across the list. Title, source and link are untouched, so each headline's resolved company/ticker never moves - only *which trading session* its alignment lands on can change, which is exactly the thing Day 4 exists to get right and therefore the thing this audit has to be able to break.
+
+Run against the real 23-headline resolved set: observed contemporaneous r = -0.185 (the same number Day 5 reported). 1,000 timestamp shuffles (seeded, deterministic) build a null distribution with mean -0.017 and a 95% band of [-0.223, +0.221]; the observed r sits inside that band (empirical two-sided p = 0.118). **PASS** - but the honest reading is "consistent with no detectable timestamp-dependent signal," not "no leak exists." With a result this close to zero (Day 5-7 already found nothing to lose), passing a leakage test on it does not demonstrate much on its own.
+
+What does demonstrate something: a synthetic positive-control test (`tests/test_audit.py::test_synthetic_leak_is_detected_as_outside_the_shuffled_null_band`) builds 10 fake headlines across 10 real tickers where VADER's score is mocked to exactly equal the one session's return each headline is genuinely aligned to - a deliberate, textbook look-ahead leak, giving r = 1.0 under the real timestamps by construction. Shuffling timestamps reassigns each headline to the *other*, unrelated session's return, and the same 1,000-shuffle procedure puts that r = 1.0 clearly outside the resulting null band. That is what a **FAIL** verdict looks like, and it proves the PASS above is not a toothless test passing everything - the audit can tell a real alignment-level leak from noise when one exists; this fixture's real data simply isn't one.
+
+Verified honestly: 138/151 tests pass (9 new; the 13 pre-existing failures are the same FinBERT/torch gap every prior checkpoint has recorded - torch could not be installed in this sandbox, unrelated to this change). `python -m sentiment.audit` and `--n-shuffles`/`--seed` were both run by hand against the committed fixture, writing `outputs/audit_shuffle_null.csv`.
+
+**Why this result might still be spurious, or might be hiding one that is not.** Running the audit does not retroactively make Day 5-7's null result trustworthy beyond what it already was, and the audit itself has a specific, nameable blind spot - see Limitations below for both.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -171,6 +185,10 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 - Day 7's "market" is a proxy, not a real benchmark: the equal-weighted mean return of the same 23-ticker universe Day 5 resolved headlines against, because no free NSE index fixture (NIFTY 50 or similar) is committed to this repo. Abnormal return here means "in excess of this specific 23-name sample," which is itself sentiment-selected, not "in excess of the market" in the usual sense - a real index would need a new data source wired in first.
 - The cumulative abnormal return chart's high-magnitude group has n=3 - the same 3 headlines Day 5's event study already used, because they are the only ones in this fixture that are not saturated at `compound = 0.296`. A 3-headline average cannot support a causal claim about sentiment and abnormal returns; the chart is a descriptive trajectory, not a tested effect, and one bad-fit case (Fortis Healthcare, see Findings) is outvoted by two better-fit ones in the average.
 - The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
+- **The Day 8 shuffle test only randomises timing, not company identity.** A headline's resolved ticker never changes across shuffles, so a confound tied to *which company* a headline is about - a stock that happens to be trending the same direction across both of its available sessions in this one-month fixture, regardless of any headline - would survive this exact control unchanged. This audit catches the specific "wrong trading session" leak Day 4 is built to prevent; it is not a general proof the pipeline cannot leak any other way. Catching a company-identity confound would need a different control (e.g. shuffling which ticker a headline resolves to, or holding whole tickers out), not built here.
+- Every ticker in the committed price fixture has exactly two bars (one month, two trading days actually exercised by the fixture's headlines). A timestamp shuffle can therefore only ever reassign a headline between those same two sessions - the null distribution's spread is bounded by that two-session, one-month snapshot, the same frozen-window limitation Day 5-7 already named for the correlation and event-study numbers themselves.
+- With n=23 and Day 5's own correlation CI already as wide as [-0.555, +0.246], this audit has low power to detect a moderate leak - it can only reliably catch a large one, like the synthetic positive control's engineered r=1.0. A PASS here means "no leak large enough to see at this sample size," not "no leak."
+- The synthetic positive control proves the methodology can catch *one* leak shape (a headline's own alignment landing on the wrong session). It is a sensitivity check on this audit, not a general guarantee the audit would catch every way a pipeline could leak - see the identity-confound point above for a shape it is not built to catch.
 
 ## Where this sits
 
