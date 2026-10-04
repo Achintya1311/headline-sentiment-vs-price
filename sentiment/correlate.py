@@ -34,9 +34,11 @@ from __future__ import annotations
 import argparse
 import csv
 import sys
+from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
-from sentiment.headline import read_csv
+from sentiment.headline import Headline, read_csv
 from sentiment.market_hours import align_headline
 from sentiment.prices import PriceFetchError, bar_on, load_bars, next_session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
@@ -62,10 +64,21 @@ ROW_FIELDNAMES = [
 ]
 
 
-def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+def build_rows(
+    in_path: Path,
+    live: bool = False,
+    timestamp_for: Callable[[Headline], datetime] | None = None,
+) -> tuple[list[dict], list[tuple[str, str]]]:
     """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
     for headlines whose company was recognised but whose ticker could not be
-    fetched (see ``sentiment.tickers``)."""
+    fetched (see ``sentiment.tickers``).
+
+    ``timestamp_for``, if given, overrides which ``published_at`` each
+    headline is aligned against while leaving its title/company/ticker/score
+    untouched - this is the hook Day 8's ``sentiment.audit`` shuffle control
+    uses to re-run this same pipeline against a scrambled timestamp instead
+    of duplicating it.
+    """
     headlines = read_csv(in_path)
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
@@ -80,7 +93,8 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
             unresolved.append((h.title, company))
             continue
 
-        alignment = align_headline(h.published_at)
+        published_at = timestamp_for(h) if timestamp_for is not None else h.published_at
+        alignment = align_headline(published_at)
         try:
             bars = load_bars(ticker, live=live)
         except PriceFetchError as exc:
