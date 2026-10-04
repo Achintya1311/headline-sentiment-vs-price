@@ -36,7 +36,7 @@ import csv
 import sys
 from pathlib import Path
 
-from sentiment.headline import read_csv
+from sentiment.headline import Headline, read_csv
 from sentiment.market_hours import align_headline
 from sentiment.prices import PriceFetchError, bar_on, load_bars, next_session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
@@ -66,7 +66,18 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
     """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
     for headlines whose company was recognised but whose ticker could not be
     fetched (see ``sentiment.tickers``)."""
-    headlines = read_csv(in_path)
+    return build_rows_from_headlines(read_csv(in_path), live=live)
+
+
+def build_rows_from_headlines(
+    headlines: list[Headline], live: bool = False, quiet: bool = False
+) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Same pairing ``build_rows`` does, but from an already-loaded list of
+    headlines rather than a CSV path - lets Day 8's audit re-run the exact
+    same alignment/pairing logic against a timestamp-shuffled copy of the
+    same headlines without round-tripping through disk. ``quiet`` suppresses
+    the per-row price warnings, which would otherwise print once per
+    shuffle."""
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
@@ -106,7 +117,7 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
             }
         )
 
-    if price_errors:
+    if price_errors and not quiet:
         for ticker, msg in price_errors:
             print(f"warning: {ticker}: {msg}", file=sys.stderr)
 
