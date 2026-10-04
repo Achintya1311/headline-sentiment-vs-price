@@ -36,9 +36,9 @@ import csv
 import sys
 from pathlib import Path
 
-from sentiment.headline import read_csv
+from sentiment.headline import Headline, read_csv
 from sentiment.market_hours import align_headline
-from sentiment.prices import PriceFetchError, bar_on, load_bars, next_session_bar
+from sentiment.prices import Bar, PriceFetchError, bar_on, load_bars, next_session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
 from sentiment.tickers import resolve
 from sentiment.vader_score import score_headline
@@ -62,14 +62,25 @@ ROW_FIELDNAMES = [
 ]
 
 
-def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+def build_rows_from_headlines(
+    headlines: list[Headline],
+    live: bool = False,
+    bars_cache: dict[str, list[Bar]] | None = None,
+    report_warnings: bool = True,
+) -> tuple[list[dict], list[tuple[str, str]]]:
     """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
     for headlines whose company was recognised but whose ticker could not be
-    fetched (see ``sentiment.tickers``)."""
-    headlines = read_csv(in_path)
+    fetched (see ``sentiment.tickers``).
+
+    ``bars_cache`` lets a caller that rebuilds rows many times against the
+    same tickers (``sentiment.audit``'s shuffle control, which only ever
+    changes ``published_at``, never which tickers are involved) reuse already
+    -loaded bars instead of re-reading the same fixture file on every call.
+    """
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
+    cache = bars_cache if bars_cache is not None else {}
 
     for h in headlines:
         match = resolve(h.title)
@@ -82,7 +93,9 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
 
         alignment = align_headline(h.published_at)
         try:
-            bars = load_bars(ticker, live=live)
+            if ticker not in cache:
+                cache[ticker] = load_bars(ticker, live=live)
+            bars = cache[ticker]
         except PriceFetchError as exc:
             price_errors.append((ticker, str(exc)))
             continue
@@ -106,11 +119,16 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
             }
         )
 
-    if price_errors:
+    if price_errors and report_warnings:
         for ticker, msg in price_errors:
             print(f"warning: {ticker}: {msg}", file=sys.stderr)
 
     return rows, unresolved
+
+
+def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Return (rows, unresolved); see ``build_rows_from_headlines``."""
+    return build_rows_from_headlines(read_csv(in_path), live=live)
 
 
 def write_rows_csv(rows: list[dict], path: Path) -> None:

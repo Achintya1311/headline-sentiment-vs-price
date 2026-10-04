@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        # torch/transformers (Day 3's FinBERT scorer) are deliberately not
+        # installed here - see requirements.txt and the README: the CPU-only
+        # wheel is large and this CI job never needs FinBERT, only VADER and
+        # everything downstream of it. FinBERT's own tests skip without it.
+        run: pip install -r requirements.txt
+
+      - name: Tests
+        run: pytest -q
+
+      - name: Leakage audit - shuffled-timestamp control must not leak
+        # The "Done when" gate from day 1: shuffle headline timestamps and
+        # any claimed signal must disappear. This fixture's real result is
+        # still null (see README Findings/Limitations), so this step passes
+        # vacuously today - its job is to fail the build the moment a future,
+        # richer fixture produces a significant correlation that survives
+        # shuffling too, which is what a leak looks like.
+        run: python -m sentiment.audit --n-shuffles 2000
