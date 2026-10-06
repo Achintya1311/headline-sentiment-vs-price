@@ -9,6 +9,7 @@ from sentiment.stats import (
     oos_r_squared,
     pearson_r,
     pearson_with_ci,
+    permutation_p_value,
     r_squared,
 )
 
@@ -150,3 +151,36 @@ def test_mean_absolute_error_basic():
 def test_mean_absolute_error_requires_at_least_one_point():
     with pytest.raises(ValueError):
         mean_absolute_error([], [])
+
+
+def test_permutation_p_value_small_when_observed_is_an_outlier():
+    # the real statistic (1.0) is nowhere near a null distribution clustered at 0
+    null_samples = [0.01, -0.02, 0.03, -0.01, 0.0, 0.02, -0.03, 0.01] * 10
+    result = permutation_p_value(1.0, null_samples)
+    assert result.p_value < 0.05
+
+
+def test_permutation_p_value_large_when_observed_matches_the_null():
+    # the real statistic sits right in the middle of its own null distribution
+    null_samples = [-0.2, -0.1, 0.0, 0.1, 0.2] * 20
+    result = permutation_p_value(0.0, null_samples)
+    assert result.p_value > 0.5
+
+
+def test_permutation_p_value_never_reports_exactly_zero():
+    # (count + 1) / (n + 1) smoothing: even an observed value more extreme
+    # than every null sample can't be reported as literally impossible
+    null_samples = [0.01, 0.02, 0.03]
+    result = permutation_p_value(100.0, null_samples)
+    assert result.p_value == pytest.approx(1 / 4)
+
+
+def test_permutation_p_value_requires_at_least_one_null_sample():
+    with pytest.raises(ValueError):
+        permutation_p_value(1.0, [])
+
+
+def test_permutation_result_null_mean_and_std():
+    result = permutation_p_value(0.0, [1.0, 2.0, 3.0])
+    assert result.null_mean == pytest.approx(2.0)
+    assert result.null_std == pytest.approx(math.sqrt(2 / 3))
