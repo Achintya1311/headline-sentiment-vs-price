@@ -12,9 +12,9 @@ The hard part is not the model, it is the timestamp alignment. A headline stampe
 
 ## Correctness gate
 
-Shuffled-timestamp control: randomise headline times and the signal must disappear. Runs in CI, not once by hand.
+Shuffled-timestamp control: randomise headline times and the signal must disappear. Implemented as `sentiment.audit` (Day 8) and exercised by `pytest`; no GitHub Actions workflow runs it yet (see Limitations), so today it is run by hand with every other test, not on every push.
 
-This is the test that decides whether the repo is finished. A result that has not passed it is a draft.
+This is the test that decides whether the repo is finished. A result that has not passed it is a draft. As of Day 8, it has passed: 0/200 shuffled-timestamp controls came back "significant" (see Findings) - the real result stays the null one Day 5 already found.
 
 ## Data sources
 
@@ -77,8 +77,12 @@ python -m sentiment.overlay
 python -m sentiment.overlay --live
 python -m sentiment.overlay --window-before 8 --window-after 2
 
-# Day 8 (not built yet): the leakage/audit pass (shuffle headline timestamps,
-# confirm the signal disappears) plus a "why this might be spurious" section.
+# Day 8: ml-pipeline-audit - shuffle headline timestamps many times, confirm
+# any correlation does not survive. Always reads prices from fixtures (the
+# shuffle trials never go live, regardless of --live); --live only affects
+# the one real, unshuffled baseline run.
+python -m sentiment.audit
+python -m sentiment.audit --n-shuffles 500 --seed 1
 ```
 
 No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
@@ -136,6 +140,26 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 
 `cumulative_abnormal_return.png` aligns each resolved headline to trading-day offsets from its own aligned session (0 = event day) and cumulates abnormal return (vs the equal-weighted proxy) across the default window (-5 to +1 trading days), averaged separately across the high- and low-magnitude groups. The honest result is **not** a clean event-day reaction: the high-magnitude group's mean CAR is already running positive (+2.1% at offset -5) well before offset 0, because two of the three tickers (Great Eastern Shipping, Max Financial) were already in an uptrend before their headline appeared - the group's CAR trajectory reflects pre-existing momentum in 2 of 3 names, not a reaction to news, and Fortis Healthcare's steep decline (the one name where the headline plausibly *should* have mattered, in the wrong direction) is outvoted by the other two in a 3-headline average. With n=3, this cannot support any claim about what high-magnitude sentiment headlines do to abnormal returns on this fixture - the chart is descriptive, and the number of trading days actually observed at each offset varies (documented in `average_car_by_offset`'s docstring): offset +1 has fewer contributing headlines than offset 0, because Tuesday-aligned headlines' next session had not traded yet in this fixture, the same gap Day 5/6 already hit.
 
+**Day 8 - ml-pipeline-audit (leakage control).** `sentiment/audit.py` implements the "done when" test NEXT_STEPS.md fixed before any of this pipeline existed: shuffle headline timestamps and confirm the signal disappears. `shuffle_timestamps` keeps every headline's title, source and link - and therefore its VADER score, a pure function of the title - exactly as scraped, and only permutes which `published_at` each one is stamped with. That is the one input Day 4's alignment and Day 5's correlation depend on, so re-running the unmodified `build_rows`/`pearson_with_ci` pipeline against many such shuffles and checking whether a "significant" correlation (95% CI excluding zero) turns up anywhere near as often as it would need to for the real result to be an artifact is a direct test of whether the correlation needs correct timestamps at all, not a proxy for one.
+
+Run against the real 23-headline fixture Day 5 already resolved (`python -m sentiment.audit`, 200 shuffles, seed 0): the real, unshuffled contemporaneous correlation is the same `r=-0.185` (95% CI `[-0.555, +0.246]`, n=23) Day 5 already found and already called a null result. Across the 200 shuffled-timestamp controls, mean `|r|=0.084` and **0 of 200 (0.0%)** came back "significant" at 95% - comfortably under the 12% ceiling this audit allows for sampling noise around the nominal 5% false-positive rate of a 95% CI. The permutation p-value comparing the actual `r` against that shuffled-null distribution is **0.095**: the real correlation's magnitude is somewhat larger than the typical shuffled draw, but not enough to clear even the lenient end of conventional significance - consistent with Day 5's own CI, which already contained zero. **PASS**: this fixture shows no sign that the correlation survives when the one input it should depend on (the timestamp-to-session alignment) is destroyed - the result stays the honest null Day 5 found, now with an independent check that it isn't an artifact of a pipeline bug that quietly ignores `published_at`.
+
+The audit's own detection logic (`shuffle_audit`, `tests/test_audit.py`) is tested separately from whether the real pipeline happens to leak: a synthetic "leaky" `build_rows` stand-in that returns the same strong correlation regardless of what timestamp a headline gets shuffled to is correctly flagged (100% of shuffles "significant" → FAIL), and a synthetic stand-in whose signal only survives when a headline keeps its own original timestamp is correctly passed (shuffling destroys it almost every time → PASS). Both directions of the check are proven to work before trusting what it says about the real, already-null fixture.
+
+## Why this might be spurious
+
+The leakage audit passing is reassurance that this specific pipeline bug (a correlation that doesn't actually need correct timestamps) isn't present - it is not a reassurance that Days 5-7's null findings would stay null on a different sample, and it does not rule out every way this project's results could still mislead:
+
+- **The audit only covers one leak pathway.** `shuffle_timestamps` tests whether the correlation depends on Day 4's timestamp-to-session alignment specifically. It would not catch a leak introduced anywhere else in the pipeline - for example, if `sentiment.prices.fetch_live` ever returned a bar dated after the "current" date, or if a future day's scorer somehow used information not available at publish time. Those would need their own, differently-shaped audits.
+- **Saturated predictor, not just a small sample.** 17 of the 23 headlines Day 5 resolved share the identical VADER `compound = 0.296` (the "Share Price Highlights" template - see Day 5/6 Findings). A correlation computed over a predictor that is nearly constant for most of the sample has very little real information to find a relationship with, before the price side is even considered - a null result here is closer to "underpowered" than "tested and rejected."
+- **n is small everywhere this matters.** 23 headlines for the main correlation, 15 for the lagged one, 3 for the event study's high-magnitude group. Every confidence interval reported across Days 5-7 is wide because of this, not because the underlying effect (if any) is necessarily small - this fixture cannot distinguish "no effect" from "an effect too small to see with this n."
+- **Multiple comparisons across days.** Contemporaneous and lagged correlation (Day 5), an event-study threshold (Day 5), a regression split point (Day 6), and a CAR window (Day 7) are four related but distinct tests run against the same 23-headline sample. None of them individually came back significant, which is itself evidence against a signal here - but the hypothesis and thresholds were fixed by NEXT_STEPS.md's own trap warning before the data was touched specifically to avoid this; worth naming instead of treating four nulls as four independent confirmations.
+- **One outlet, one day.** Every headline in this fixture comes from a single Economic Times RSS scrape on one calendar day (see Day 1 Findings - Moneycontrol and Reuters were both unreachable). A finding from one editorial outlet's one day of coverage cannot support a claim about "headline sentiment and price" in general, whatever it had come out as.
+- **The resolved subset is not a random sample of headlines.** `sentiment/tickers.py` is a closed, hand-written lookup that only resolves headlines matching specific single-company shapes already present in this fixture (see its own docstring). The 23 headlines this audit and Days 5-7 actually test are the ones that happened to fit those shapes - a form of selection that could point either direction and has not been checked.
+- **Day 7's benchmark is not independent of the sample.** The "market" return Day 7 subtracts to get an abnormal return is the equal-weighted mean of the same 23-ticker universe the headlines are scored against, because no free NSE index fixture exists here (see Day 7 Findings). Any abnormal-return number inherits whatever this specific 23-name sample is doing, not a true market benchmark.
+
+None of this means the null result is wrong - it means a clean leakage-audit pass is a necessary check, not a sufficient one, and the honest summary of this project is "no signal found, on a sample too small and too selected to have found a modest one even if it existed."
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -170,7 +194,10 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 - Correlation over a short window with many tested horizons manufactures significance. The hypothesis is fixed before the data is touched.
 - Day 7's "market" is a proxy, not a real benchmark: the equal-weighted mean return of the same 23-ticker universe Day 5 resolved headlines against, because no free NSE index fixture (NIFTY 50 or similar) is committed to this repo. Abnormal return here means "in excess of this specific 23-name sample," which is itself sentiment-selected, not "in excess of the market" in the usual sense - a real index would need a new data source wired in first.
 - The cumulative abnormal return chart's high-magnitude group has n=3 - the same 3 headlines Day 5's event study already used, because they are the only ones in this fixture that are not saturated at `compound = 0.296`. A 3-headline average cannot support a causal claim about sentiment and abnormal returns; the chart is a descriptive trajectory, not a tested effect, and one bad-fit case (Fortis Healthcare, see Findings) is outvoted by two better-fit ones in the average.
-- The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
+- The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented.
+- Day 8's shuffle audit tests one specific leak pathway (does the correlation depend on Day 4's timestamp-to-session alignment) and passing it does not certify the pipeline leak-free in general - see "Why this might be spurious" for the other ways this sample could still mislead, independent of the audit's own result.
+- No CI workflow is configured in this repository (no `.github/workflows/`) despite the "done when" criterion in NEXT_STEPS.md saying the leakage test "runs in CI, not once by hand" - today it runs as part of `pytest`, which is run by hand each day, not on a schedule or on push. Wiring an actual CI workflow is still open.
+- The audit's 12% false-positive-rate ceiling (vs. a nominal 5% for a single 95% CI) is a judgment call to tolerate sampling noise across 200 shuffles, not a value derived from first principles - a differently-sized fixture or a different number of shuffles might need a different ceiling to stay well-calibrated. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
 
 ## Where this sits
 

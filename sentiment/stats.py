@@ -127,6 +127,24 @@ def mean_absolute_error(y_true: list[float], y_pred: list[float]) -> float:
     return sum(abs(yt - yp) for yt, yp in zip(y_true, y_pred)) / n
 
 
+def permutation_p_value(actual_r: float, null_rs: list[float]) -> float:
+    """Two-sided permutation-test p-value: the share of a null distribution
+    (correlations computed under some randomisation that should destroy the
+    real relationship, e.g. Day 8's shuffled headline timestamps) at least
+    as extreme as the actual, unshuffled correlation.
+
+    Uses the standard ``(extreme + 1) / (n + 1)`` form (Davison & Hinkley)
+    rather than a plain fraction, so a p-value is never reported as exactly
+    0 just because a finite number of permutations happened not to exceed
+    the observed statistic - the actual draw itself is a valid member of
+    the null distribution and belongs in the count.
+    """
+    if not null_rs:
+        raise ValueError("need at least 1 null draw")
+    extreme = sum(1 for r in null_rs if abs(r) >= abs(actual_r))
+    return (extreme + 1) / (len(null_rs) + 1)
+
+
 @dataclass(frozen=True)
 class BootstrapDiffResult:
     diff: float

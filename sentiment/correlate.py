@@ -66,7 +66,14 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
     """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
     for headlines whose company was recognised but whose ticker could not be
     fetched (see ``sentiment.tickers``)."""
-    headlines = read_csv(in_path)
+    return build_rows_from_headlines(read_csv(in_path), live=live)
+
+
+def build_rows_from_headlines(headlines: list, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Same as ``build_rows``, but takes already-loaded headlines directly -
+    Day 8's shuffle audit needs to run this pipeline repeatedly against
+    headlines whose timestamps it has permuted in memory, without writing a
+    CSV to disk for every trial."""
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
