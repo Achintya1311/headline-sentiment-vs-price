@@ -67,6 +67,16 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
     for headlines whose company was recognised but whose ticker could not be
     fetched (see ``sentiment.tickers``)."""
     headlines = read_csv(in_path)
+    return build_rows_from_headlines(headlines, live=live)
+
+
+def build_rows_from_headlines(
+    headlines: list, live: bool = False
+) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Same as ``build_rows``, taking already-loaded ``Headline`` objects
+    instead of a CSV path. Split out so Day 8's audit can rebuild rows
+    against a shuffled-timestamp copy of a headline set without a round trip
+    through disk."""
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
