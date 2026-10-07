@@ -12,7 +12,7 @@ The hard part is not the model, it is the timestamp alignment. A headline stampe
 
 ## Correctness gate
 
-Shuffled-timestamp control: randomise headline times and the signal must disappear. Runs in CI, not once by hand.
+Shuffled-timestamp control: randomise headline times and the signal must disappear. Runs in CI (`.github/workflows/ci.yml`), not once by hand - `sentiment/audit.py`, built on Day 8, is what actually runs there.
 
 This is the test that decides whether the repo is finished. A result that has not passed it is a draft.
 
@@ -77,8 +77,15 @@ python -m sentiment.overlay
 python -m sentiment.overlay --live
 python -m sentiment.overlay --window-before 8 --window-after 2
 
-# Day 8 (not built yet): the leakage/audit pass (shuffle headline timestamps,
-# confirm the signal disappears) plus a "why this might be spurious" section.
+# Day 8: leakage/audit pass. Shuffles which headline got which real
+# published_at timestamp, reruns the real alignment + correlation/regression
+# pipeline many times, and checks the real (unshuffled) result against that
+# shuffled null distribution - plus a synthetic check that the control would
+# actually catch a real signal, since the real fixture's own result is
+# already null (see Day 5/6 Findings) and a test that can't fail proves
+# nothing. Exits non-zero on failure, so this is the step CI runs.
+python -m sentiment.audit
+python -m sentiment.audit --trials 2000 --seed 7
 ```
 
 No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
@@ -136,6 +143,24 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 
 `cumulative_abnormal_return.png` aligns each resolved headline to trading-day offsets from its own aligned session (0 = event day) and cumulates abnormal return (vs the equal-weighted proxy) across the default window (-5 to +1 trading days), averaged separately across the high- and low-magnitude groups. The honest result is **not** a clean event-day reaction: the high-magnitude group's mean CAR is already running positive (+2.1% at offset -5) well before offset 0, because two of the three tickers (Great Eastern Shipping, Max Financial) were already in an uptrend before their headline appeared - the group's CAR trajectory reflects pre-existing momentum in 2 of 3 names, not a reaction to news, and Fortis Healthcare's steep decline (the one name where the headline plausibly *should* have mattered, in the wrong direction) is outvoted by the other two in a 3-headline average. With n=3, this cannot support any claim about what high-magnitude sentiment headlines do to abnormal returns on this fixture - the chart is descriptive, and the number of trading days actually observed at each offset varies (documented in `average_car_by_offset`'s docstring): offset +1 has fewer contributing headlines than offset 0, because Tuesday-aligned headlines' next session had not traded yet in this fixture, the same gap Day 5/6 already hit.
 
+**Day 8 - leakage audit.** `sentiment/audit.py` builds the control the README's correctness gate has named since Day 1 but that, until today, did not exist: this is the first commit that actually runs it. Two checks, because a placebo test that cannot fail proves nothing:
+
+1. **Synthetic power check.** The real fixture's own finding (Day 5/6) is already null - 17 of 23 real headlines tied at the identical VADER compound, out-of-sample R² = 0.000 exactly because the regressor has zero variance. Running the shuffle test on data that already has no detectable signal would report "no leak" whether or not the control works at all. So `audit.py` first builds a synthetic world - 6 trading sessions, 4 headlines each, each headline's sentiment score an exact, noise-free linear function of its session's "true" next-day return (the same clean-signal idea `tests/test_regress.py`'s own synthetic test already uses) - and runs it both straight and through `shuffle_published_at`. Straight: out-of-sample R² = 1.000, the control sees the built-in relationship perfectly. Shuffled, averaged over 500 trials with different random re-pairings of the same timestamps: mean R² = +0.003 - indistinguishable from zero. The control destroys a real signal when one exists, which is the only thing that gives the next check any weight.
+2. **Real-data placebo test.** `shuffle_published_at` reassigns this fixture's own 50 real `published_at` values across the 50 headlines (same multiset of timestamps, different headline attached to each), re-sorts oldest-first the way `sentiment.headline.write_csv` always does, and reruns the real `align_headline` + `build_rows_from_headlines` pipeline from scratch - 500 times with different re-pairings. The real (unshuffled) fixture's own contemporaneous r (-0.185) ranks at the 12.8th percentile of its own shuffled null distribution (not an outlier in either tail), and its out-of-sample R² (0.000) sits exactly at the null distribution's own center (every trial with a zero-variance predictor also returns 0.000, so the real result is literally typical, not exceptional). Both pass the audit's placebo-p-value floor (0.05). `python -m sentiment.audit` exits 0.
+
+Read together with Day 5/6: this is a negative result confirming a negative result, not new evidence that sentiment has no predictive power here. What it rules out is a specific, concrete failure mode - a look-ahead bug in `align_headline` or in how `build_rows_from_headlines` pairs a headline with a session's return - and nothing more. See "Why this might still be spurious" below for what it does not rule out.
+
+## Why this might still be spurious
+
+Day 8's audit passing is not the same claim as "this repo's results are trustworthy." Specifically, against this repo's own numbers:
+
+- **Passing the audit does not mean there is a real null finding to defend - it means the pipeline isn't manufacturing a fake positive one.** Day 5-7's "no correlation" result could still be wrong for reasons that have nothing to do with timestamp leakage: wrong ticker resolution, a mis-specified event threshold, an unrepresentative fixture. The audit is a necessary check on one specific failure mode, not a certificate of correctness for everything upstream of it.
+- **The real-data placebo test has almost no independent variation to work with, which cuts both ways.** 17 of the 23 resolved headlines share the identical VADER compound (0.296, see Day 5 Findings), so the real-data check's p-values (0.128, 1.0) are exactly what "no leak" looks like - but they are also exactly what "nothing here carries any information at all" looks like. A shuffle test on a near-constant predictor cannot tell those two explanations apart; it can only rule out one specific bug class.
+- **The synthetic power check proves the control can catch a large, clean, noise-free signal (true_slope=20, zero noise) - not a small or noisy one.** A real sentiment effect, if it exists anywhere, is more likely to be subtle than the deliberately oversized synthetic signal used here. This audit has not been shown to have power against a weak leak, only a blatant one.
+- **Shuffling timestamps is a within-sample permutation.** It reassigns the same 50 real timestamps to different headlines, so every shuffled trial lands on a trading session the pipeline was already going to see. A bug that always routed every headline to the same wrong-but-fixed date, independent of its actual timestamp, would not necessarily be disturbed by this particular control - the permutation changes *which* headline gets a date, not the universe of dates in play.
+- **The sample is still one feed, two calendar days of real publish time, 23 tickers.** A clean audit result on a narrow slice says the mechanism isn't broken on this slice; it says nothing about whether the method would still be clean on a wider date range, a different feed mix, or across the NSE-holiday gap `market_hours.is_trading_day` already documents as unhandled.
+- **The audit's own pass/fail thresholds are judgment calls** (R² ≥ 0.8 for "the control can see a signal," mean shuffled R² < 0.3 for "shuffling destroyed it," placebo p ≥ 0.05 for "not an outlier"), chosen to be loose rather than derived from first principles. Today's run is not close to any of these boundaries, but a future run that is would need a human reading the numbers, not just the exit code.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -171,6 +196,9 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 - Day 7's "market" is a proxy, not a real benchmark: the equal-weighted mean return of the same 23-ticker universe Day 5 resolved headlines against, because no free NSE index fixture (NIFTY 50 or similar) is committed to this repo. Abnormal return here means "in excess of this specific 23-name sample," which is itself sentiment-selected, not "in excess of the market" in the usual sense - a real index would need a new data source wired in first.
 - The cumulative abnormal return chart's high-magnitude group has n=3 - the same 3 headlines Day 5's event study already used, because they are the only ones in this fixture that are not saturated at `compound = 0.296`. A 3-headline average cannot support a causal claim about sentiment and abnormal returns; the chart is a descriptive trajectory, not a tested effect, and one bad-fit case (Fortis Healthcare, see Findings) is outvoted by two better-fit ones in the average.
 - The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
+- Day 8's shuffled-timestamp audit (`sentiment/audit.py`) is a within-sample permutation test on one 50-headline, one-feed, two-calendar-day fixture - a clean result says the alignment/pairing mechanism isn't broken on this slice, not that it would stay clean on a wider date range or a different feed. See "Why this might still be spurious" for the fuller accounting.
+- The audit's synthetic power check validates detection of a large, noise-free signal (slope=20, zero noise) over 6 synthetic trading days - it has not been shown to have power against a small or noisy leak, only a blatant one, and a weak real leak could in principle pass undetected.
+- The audit's pass/fail thresholds (synthetic R² ≥ 0.8, shuffled-mean R² < 0.3, placebo p ≥ 0.05) are chosen to be loose, not derived from theory. A borderline future run would need to be read by a person, not just the exit code.
 
 ## Where this sits
 

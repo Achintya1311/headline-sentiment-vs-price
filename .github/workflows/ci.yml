@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          # CPU-only wheel, per README - this runner has network access and
+          # the wheel is free, unlike the offline dev sandbox this portfolio
+          # is otherwise built in.
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Tests
+        run: python -m pytest -q
+
+      - name: Leakage audit - shuffled headline timestamps must kill the signal
+        # The "Done when" gate NEXT_STEPS.md and the README both name: a
+        # shuffled-timestamp control must come back clean before any result
+        # here is believed. See sentiment/audit.py. Fails the build the same
+        # way a broken test would, not just a warning.
+        run: python -m sentiment.audit
