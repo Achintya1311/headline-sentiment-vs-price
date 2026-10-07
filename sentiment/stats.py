@@ -127,6 +127,20 @@ def mean_absolute_error(y_true: list[float], y_pred: list[float]) -> float:
     return sum(abs(yt - yp) for yt, yp in zip(y_true, y_pred)) / n
 
 
+def permutation_p_value(real_r: float, null_rs: list[float]) -> float:
+    """Two-sided empirical p-value for ``real_r`` against a null distribution
+    of correlations produced by a permutation/shuffle control (Day 8).
+
+    Counts how often the null reproduces something at least as extreme as
+    the real statistic, with the usual +1/+1 correction so the result is
+    never exactly 0 (a real result can't be proven "impossible under the
+    null" from a finite number of trials - it can only be rare)."""
+    if not null_rs:
+        raise ValueError("need at least one null-distribution draw")
+    as_extreme = sum(1 for r in null_rs if abs(r) >= abs(real_r))
+    return (as_extreme + 1) / (len(null_rs) + 1)
+
+
 @dataclass(frozen=True)
 class BootstrapDiffResult:
     diff: float

@@ -9,6 +9,7 @@ from sentiment.stats import (
     oos_r_squared,
     pearson_r,
     pearson_with_ci,
+    permutation_p_value,
     r_squared,
 )
 
@@ -150,3 +151,35 @@ def test_mean_absolute_error_basic():
 def test_mean_absolute_error_requires_at_least_one_point():
     with pytest.raises(ValueError):
         mean_absolute_error([], [])
+
+
+def test_permutation_p_value_is_small_when_real_r_is_an_outlier():
+    null_rs = [0.01, -0.02, 0.03, 0.0, -0.01] * 20  # 100 draws clustered near 0
+    p = permutation_p_value(real_r=0.95, null_rs=null_rs)
+    assert p < 0.05
+
+
+def test_permutation_p_value_is_large_when_real_r_looks_like_the_null():
+    null_rs = [0.2, -0.2, 0.18, -0.19, 0.21, -0.17] * 10
+    p = permutation_p_value(real_r=0.19, null_rs=null_rs)
+    assert p > 0.5
+
+
+def test_permutation_p_value_uses_absolute_value_two_sided():
+    # a real_r of -0.95 is just as extreme against this null as +0.95
+    null_rs = [0.0] * 50
+    assert permutation_p_value(0.95, null_rs) == permutation_p_value(-0.95, null_rs)
+
+
+def test_permutation_p_value_never_reports_impossible_from_a_finite_sample():
+    # even a real_r nothing in the null comes close to still gets p > 0,
+    # not 0 - a finite number of shuffles can only make a result "rare",
+    # never "proven impossible under the null".
+    null_rs = [0.0] * 50
+    p = permutation_p_value(1.0, null_rs)
+    assert p > 0.0
+
+
+def test_permutation_p_value_rejects_empty_null():
+    with pytest.raises(ValueError):
+        permutation_p_value(0.5, [])
