@@ -66,7 +66,14 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
     """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
     for headlines whose company was recognised but whose ticker could not be
     fetched (see ``sentiment.tickers``)."""
-    headlines = read_csv(in_path)
+    return build_rows_from_headlines(read_csv(in_path), live=live)
+
+
+def build_rows_from_headlines(headlines: list, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Same as ``build_rows``, but takes already-parsed ``Headline`` objects
+    instead of a CSV path. Split out so ``sentiment.audit`` (Day 8) can rerun
+    this exact pipeline against a headline list with the timestamps shuffled,
+    without going through a file on disk."""
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
