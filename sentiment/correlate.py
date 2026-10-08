@@ -36,7 +36,7 @@ import csv
 import sys
 from pathlib import Path
 
-from sentiment.headline import read_csv
+from sentiment.headline import Headline, read_csv
 from sentiment.market_hours import align_headline
 from sentiment.prices import PriceFetchError, bar_on, load_bars, next_session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
@@ -62,11 +62,20 @@ ROW_FIELDNAMES = [
 ]
 
 
-def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+def build_rows(
+    in_path: Path | None, live: bool = False, headlines: list[Headline] | None = None
+) -> tuple[list[dict], list[tuple[str, str]]]:
     """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
     for headlines whose company was recognised but whose ticker could not be
-    fetched (see ``sentiment.tickers``)."""
-    headlines = read_csv(in_path)
+    fetched (see ``sentiment.tickers``).
+
+    ``headlines``, if given, is used instead of reading ``in_path`` - this is
+    what Day 8's ``sentiment.audit`` uses to rebuild this same pipeline on a
+    timestamp-shuffled copy of the real headlines without writing a
+    temporary CSV just to read it back.
+    """
+    if headlines is None:
+        headlines = read_csv(in_path)
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
