@@ -127,6 +127,22 @@ def mean_absolute_error(y_true: list[float], y_pred: list[float]) -> float:
     return sum(abs(yt - yp) for yt, yp in zip(y_true, y_pred)) / n
 
 
+def permutation_p_value(observed: float, null_samples: list[float]) -> float:
+    """Two-sided permutation p-value: the fraction of ``null_samples`` at
+    least as extreme (by absolute value) as ``observed``.
+
+    Uses the standard ``(extreme + 1) / (n + 1)`` correction (North et al.
+    1995) rather than a plain fraction, so a genuinely rare observed value
+    is reported as "smaller than 1-in-(n+1) chance", never a bare 0.0 that
+    would wrongly read as "impossible" just because this many permutations
+    happened not to see one.
+    """
+    if not null_samples:
+        raise ValueError("need at least one null sample")
+    extreme = sum(1 for s in null_samples if abs(s) >= abs(observed))
+    return (extreme + 1) / (len(null_samples) + 1)
+
+
 @dataclass(frozen=True)
 class BootstrapDiffResult:
     diff: float

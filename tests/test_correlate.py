@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import sentiment.prices as prices
-from sentiment.correlate import build_rows, run
+from sentiment.correlate import build_rows, build_rows_from_headlines, run
 from sentiment.headline import Headline, write_csv
 from sentiment.prices import Bar, save_fixture
 
@@ -172,6 +172,63 @@ def test_run_missing_input_reports_failure(tmp_path: Path):
 
     assert exit_code == 1
     assert not out_path.exists()
+
+
+def test_build_rows_from_headlines_with_shared_bars_cache_matches_uncached(tmp_path: Path, monkeypatch):
+    # Day 8's audit calls this pipeline hundreds of times against the same
+    # fixtures - a shared bars_cache must produce identical rows to the
+    # uncached path, just without re-reading each ticker's fixture file.
+    monkeypatch.setattr(prices, "FIXTURE_DIR", tmp_path)
+    import datetime as dt
+
+    save_fixture(
+        "INFY.NS",
+        [Bar(date=dt.date(2026, 9, 28), open=100.0, close=105.0), Bar(date=dt.date(2026, 9, 29), open=105.0, close=103.0)],
+    )
+    headlines = [
+        make_headline(
+            "Infosys Share Price Highlights: Infosys Stock Price History",
+            "1",
+            datetime(2026, 9, 28, 2, 0, 0, tzinfo=timezone.utc),
+        ),
+        make_headline(
+            "Infosys Share Price Highlights: Infosys Stock Price History",
+            "2",
+            datetime(2026, 9, 28, 2, 30, 0, tzinfo=timezone.utc),
+        ),
+    ]
+
+    uncached_rows, uncached_unresolved = build_rows_from_headlines(headlines)
+    cache: dict = {}
+    cached_rows, cached_unresolved = build_rows_from_headlines(headlines, bars_cache=cache)
+
+    assert cached_rows == uncached_rows
+    assert cached_unresolved == uncached_unresolved
+    assert cache == {"INFY.NS": prices.load_fixture("INFY.NS")}
+
+
+def test_build_rows_from_headlines_cache_records_price_errors_for_every_affected_headline(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(prices, "FIXTURE_DIR", tmp_path)
+    # no fixture saved for INFY.NS at all -> PriceFetchError on first lookup,
+    # cached as a failure so later headlines sharing the ticker are skipped
+    # too, not re-attempted.
+    headlines = [
+        make_headline(
+            "Infosys Share Price Highlights: Infosys Stock Price History",
+            "1",
+            datetime(2026, 9, 28, 2, 0, 0, tzinfo=timezone.utc),
+        ),
+        make_headline(
+            "Infosys Share Price Highlights: Infosys Stock Price History",
+            "2",
+            datetime(2026, 9, 28, 2, 30, 0, tzinfo=timezone.utc),
+        ),
+    ]
+    cache: dict = {}
+    rows, unresolved = build_rows_from_headlines(headlines, bars_cache=cache)
+    assert rows == []
+    assert unresolved == []
+    assert cache == {"INFY.NS": None}
 
 
 def test_run_against_committed_fixture_produces_the_expected_headline_count(tmp_path: Path):

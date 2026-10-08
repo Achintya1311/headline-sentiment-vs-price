@@ -9,6 +9,7 @@ from sentiment.stats import (
     oos_r_squared,
     pearson_r,
     pearson_with_ci,
+    permutation_p_value,
     r_squared,
 )
 
@@ -150,3 +151,27 @@ def test_mean_absolute_error_basic():
 def test_mean_absolute_error_requires_at_least_one_point():
     with pytest.raises(ValueError):
         mean_absolute_error([], [])
+
+
+def test_permutation_p_value_observed_at_the_extreme_of_the_null_is_small():
+    null_samples = [0.0, 0.01, -0.01, 0.02, -0.02, 0.03, -0.03]
+    p = permutation_p_value(observed=0.9, null_samples=null_samples)
+    assert p == pytest.approx(1 / (len(null_samples) + 1))
+
+
+def test_permutation_p_value_observed_at_the_center_of_a_symmetric_null_is_large():
+    null_samples = [-0.3, -0.2, -0.1, 0.0, 0.1, 0.2, 0.3]
+    p = permutation_p_value(observed=0.0, null_samples=null_samples)
+    assert p == pytest.approx(1.0)
+
+
+def test_permutation_p_value_is_two_sided():
+    # a strongly negative observed value should be treated the same as the
+    # equally strongly positive one - this is a two-sided test by design.
+    null_samples = [0.0, 0.1, -0.1, 0.2, -0.2]
+    assert permutation_p_value(-0.9, null_samples) == permutation_p_value(0.9, null_samples)
+
+
+def test_permutation_p_value_requires_at_least_one_null_sample():
+    with pytest.raises(ValueError):
+        permutation_p_value(0.5, [])
