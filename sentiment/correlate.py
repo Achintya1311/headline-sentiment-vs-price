@@ -36,7 +36,7 @@ import csv
 import sys
 from pathlib import Path
 
-from sentiment.headline import read_csv
+from sentiment.headline import Headline, read_csv
 from sentiment.market_hours import align_headline
 from sentiment.prices import PriceFetchError, bar_on, load_bars, next_session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
@@ -62,11 +62,22 @@ ROW_FIELDNAMES = [
 ]
 
 
-def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+def build_rows_from_headlines(
+    headlines: list[Headline], live: bool = False, verbose: bool = True
+) -> tuple[list[dict], list[tuple[str, str]]]:
     """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
     for headlines whose company was recognised but whose ticker could not be
-    fetched (see ``sentiment.tickers``)."""
-    headlines = read_csv(in_path)
+    fetched (see ``sentiment.tickers``).
+
+    Takes already-loaded ``Headline`` objects rather than a CSV path so
+    ``sentiment.audit``'s shuffled-timestamp control can rerun this exact
+    pipeline against headlines whose ``published_at`` has been reassigned,
+    without touching disk. ``verbose=False`` suppresses the per-ticker
+    price-error warnings below, since the audit calls this hundreds of times
+    and a real warning from the one real (unshuffled) run would otherwise be
+    lost in repeated noise from shuffled runs that land on a session a
+    ticker's fixture has no bar for.
+    """
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
@@ -106,11 +117,18 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
             }
         )
 
-    if price_errors:
+    if price_errors and verbose:
         for ticker, msg in price_errors:
             print(f"warning: {ticker}: {msg}", file=sys.stderr)
 
     return rows, unresolved
+
+
+def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Read headlines from ``in_path`` and delegate to
+    ``build_rows_from_headlines``."""
+    headlines = read_csv(in_path)
+    return build_rows_from_headlines(headlines, live=live)
 
 
 def write_rows_csv(rows: list[dict], path: Path) -> None:
