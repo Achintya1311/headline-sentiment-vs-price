@@ -36,7 +36,7 @@ import csv
 import sys
 from pathlib import Path
 
-from sentiment.headline import read_csv
+from sentiment.headline import Headline, read_csv
 from sentiment.market_hours import align_headline
 from sentiment.prices import PriceFetchError, bar_on, load_bars, next_session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
@@ -62,11 +62,13 @@ ROW_FIELDNAMES = [
 ]
 
 
-def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
-    """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
-    for headlines whose company was recognised but whose ticker could not be
-    fetched (see ``sentiment.tickers``)."""
-    headlines = read_csv(in_path)
+def build_rows_from_headlines(
+    headlines: list[Headline], live: bool = False
+) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Same pairing ``build_rows`` does, taking already-loaded ``Headline``
+    objects instead of a CSV path - what ``sentiment.audit``'s shuffled-
+    timestamp control needs, since its headlines are synthetic or reordered
+    in memory and were never written to a file."""
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
@@ -111,6 +113,14 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
             print(f"warning: {ticker}: {msg}", file=sys.stderr)
 
     return rows, unresolved
+
+
+def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
+    for headlines whose company was recognised but whose ticker could not be
+    fetched (see ``sentiment.tickers``)."""
+    headlines = read_csv(in_path)
+    return build_rows_from_headlines(headlines, live=live)
 
 
 def write_rows_csv(rows: list[dict], path: Path) -> None:
