@@ -16,6 +16,8 @@ Shuffled-timestamp control: randomise headline times and the signal must disappe
 
 This is the test that decides whether the repo is finished. A result that has not passed it is a draft.
 
+Implemented in `sentiment/audit.py` (CLI: `python -m sentiment.audit`) and exercised on every `pytest` run by `tests/test_audit.py` - see Day 8 Findings for what it actually proved, and the "why this might be spurious" discussion right after it for what it did not.
+
 ## Data sources
 
 Every source is free. Nothing in this project requires a paid tier, a subscription, or a funded account.
@@ -77,8 +79,12 @@ python -m sentiment.overlay
 python -m sentiment.overlay --live
 python -m sentiment.overlay --window-before 8 --window-after 2
 
-# Day 8 (not built yet): the leakage/audit pass (shuffle headline timestamps,
-# confirm the signal disappears) plus a "why this might be spurious" section.
+# Day 8: the ml-pipeline-audit pass. Shuffles headline timestamps across
+# headlines, rebuilds Day 5's contemporaneous-return pairing on the shuffled
+# timestamps, and compares the real correlation against the resulting null
+# distribution. Offline by default - reuses the committed price fixtures.
+python -m sentiment.audit
+python -m sentiment.audit --shuffles 1000 --seed 1
 ```
 
 No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
@@ -136,6 +142,20 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 
 `cumulative_abnormal_return.png` aligns each resolved headline to trading-day offsets from its own aligned session (0 = event day) and cumulates abnormal return (vs the equal-weighted proxy) across the default window (-5 to +1 trading days), averaged separately across the high- and low-magnitude groups. The honest result is **not** a clean event-day reaction: the high-magnitude group's mean CAR is already running positive (+2.1% at offset -5) well before offset 0, because two of the three tickers (Great Eastern Shipping, Max Financial) were already in an uptrend before their headline appeared - the group's CAR trajectory reflects pre-existing momentum in 2 of 3 names, not a reaction to news, and Fortis Healthcare's steep decline (the one name where the headline plausibly *should* have mattered, in the wrong direction) is outvoted by the other two in a 3-headline average. With n=3, this cannot support any claim about what high-magnitude sentiment headlines do to abnormal returns on this fixture - the chart is descriptive, and the number of trading days actually observed at each offset varies (documented in `average_car_by_offset`'s docstring): offset +1 has fewer contributing headlines than offset 0, because Tuesday-aligned headlines' next session had not traded yet in this fixture, the same gap Day 5/6 already hit.
 
+**Day 8 - ml-pipeline-audit pass.** `sentiment/audit.py` implements the "Done when" leakage test NEXT_STEPS.md set as the bar for this whole repo: shuffle headline timestamps across headlines, rebuild Day 5's alignment and contemporaneous-return pairing on the shuffled timestamps, recompute the correlation against VADER `compound`, and repeat many times (500 by default) to build a null distribution the real estimate is compared against.
+
+Running it against the real 23-headline fixture: real r = -0.185 (n=23, matching Day 5's own number exactly, as it must - this is the same pairing). The shuffled-timestamp null distribution (500 trials, seed 0) has mean |r| = 0.096 and a 95th-percentile |r| of 0.229; the real estimate's two-sided empirical p-value against that null is 0.128 - not distinguishable from shuffled noise. The CLI reports this as a pass, but with an honest caveat printed in the same line: **this permutation test on the real fixture cannot prove the audit has any power to catch a genuine leak.** Day 5-7 already found the real correlation is null before any shuffling happens (see those Findings) - shuffling an estimate that was already indistinguishable from zero and finding it's *still* indistinguishable from zero is consistent with "no leak," but it is equally consistent with "this test doesn't actually test anything." A test that can only pass is not a test.
+
+`tests/test_audit.py::test_leak_free_correlation_collapses_under_a_fixed_derangement` closes that gap with a synthetic, ground-truth case instead of the real fixture: 12 synthetic headlines are paired with 12 synthetic tickers whose price history has a real, compound-sized move on the headline's own date and is flat everywhere else - sentiment genuinely predicts contemporaneous return by construction (r > 0.999 at the correct alignment). A fixed derangement of the timestamps (every headline takes the next one's timestamp, cyclically - no fixed points) collapses that correlation to exactly 0.0, because each ticker's price-moving bar only exists on its true date; misaligned, every headline pairs with a flat (zero-return) bar instead. This is the proof that the shuffle mechanism in `sentiment/audit.py` can actually detect a real leak, not just fail to find one that was never there. This test runs in the suite every time `pytest` runs, not once by hand, per the "Done when" requirement.
+
+**Why the Day 5-7 null results might still be spurious (the "why this might be spurious" section NEXT_STEPS.md asked for), even having passed this audit:**
+
+- A leakage test on real data can only show the absence of a specific bug (look-ahead through misaligned timestamps); it cannot show the absence of every way a backtest like this can lie. Passing it is necessary, not sufficient.
+- The null result could be a real absence of a relationship, or it could be that this fixture has too little power to find one even if it exists: n=23 cross-sectional headline/return pairs from one or two calendar sessions, 17 of them pinned to the identical VADER compound score (Day 5's saturation finding). A test with this little variance in the predictor would report "no signal" whether or not headline sentiment predicts NSE returns in general - the audit confirms the pipeline isn't lying about what it measured, not that what it measured settles the broader question.
+- The multiple-testing trap NEXT_STEPS.md names directly applies to this project's own history: six days (5, 6, 7, and now 8) each tested variations on the same ~23-headline sample (contemporaneous r, lagged r, event-study diff, regression R², CAR by offset, and now a permutation p-value) without a held-out second sample. A hypothesis fixed before the data is touched, tested six different ways on the same data, is six chances for one of them to look interesting by chance - none did here, but that itself should be read with the same caution as if one had.
+- The audit's null distribution is itself built from the same 23 resolved headlines and the same committed price fixtures - it has no information the original estimate didn't already have. A shuffle test proves internal consistency (the statistic behaves the way a correlation should under randomization), not external validity (that VADER compound would predict NSE returns on a different sample, a different week, or a different feed).
+- `tickers.py`'s closed lookup and the single-source (Economic Times only) feed coverage - both already flagged in earlier Findings - mean this audit, like every day before it, is only ever exercised against one narrow slice of headlines. A pipeline that is leak-free on this slice is not thereby proven leak-free on a slice with different headline shapes or a wider date range.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -170,7 +190,8 @@ The chart surfaces a concrete case of VADER's already-documented finance-jargon 
 - Correlation over a short window with many tested horizons manufactures significance. The hypothesis is fixed before the data is touched.
 - Day 7's "market" is a proxy, not a real benchmark: the equal-weighted mean return of the same 23-ticker universe Day 5 resolved headlines against, because no free NSE index fixture (NIFTY 50 or similar) is committed to this repo. Abnormal return here means "in excess of this specific 23-name sample," which is itself sentiment-selected, not "in excess of the market" in the usual sense - a real index would need a new data source wired in first.
 - The cumulative abnormal return chart's high-magnitude group has n=3 - the same 3 headlines Day 5's event study already used, because they are the only ones in this fixture that are not saturated at `compound = 0.296`. A 3-headline average cannot support a causal claim about sentiment and abnormal returns; the chart is a descriptive trajectory, not a tested effect, and one bad-fit case (Fortis Healthcare, see Findings) is outvoted by two better-fit ones in the average.
-- The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
+- The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented.
+- Day 8's leakage audit, run against the real fixture, only shows that an already-null estimate stays null under shuffling - by itself that is weak evidence of "no leak," since a broken, non-functional test would report the same thing. The audit's actual proof of power comes from a synthetic, planted-signal case in `tests/test_audit.py`, not from the real data the CLI reports on. See the Day 8 Findings "why this might be spurious" discussion for the fuller list of what passing this test does and does not establish. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
 
 ## Where this sits
 
