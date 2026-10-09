@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Tests
+        # test_finbert_*.py and test_agreement.py need torch, which this
+        # project deliberately does not install by default (see README "How
+        # to run" and requirements.txt) - a documented, pre-existing gap,
+        # not something this workflow should report as a CI failure.
+        run: pytest -q --ignore=tests/test_finbert_score.py --ignore=tests/test_finbert_cli.py --ignore=tests/test_agreement.py
+
+      - name: Leakage audit - shuffle headline timestamps, the signal must disappear
+        # The "Done when" gate from NEXT_STEPS.md, run directly and not just
+        # as one assertion inside the suite: if a shuffled-timestamp control
+        # reproduces the real correlation, the pipeline is leaking and the
+        # build should fail loudly, not just log a warning.
+        run: python -m sentiment.audit
