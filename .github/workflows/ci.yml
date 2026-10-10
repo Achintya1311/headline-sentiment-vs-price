@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Tests
+        run: python -m pytest -q
+
+      - name: Leakage audit - the gate NEXT_STEPS.md's "Done when" names
+        # Shuffle headline timestamps and confirm the contemporaneous
+        # correlation does not come back "significant" more often than
+        # chance alone would (see sentiment/audit.py). Fails the build the
+        # same way a broken test would, not just a warning.
+        run: python -m sentiment.audit

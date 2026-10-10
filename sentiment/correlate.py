@@ -36,7 +36,7 @@ import csv
 import sys
 from pathlib import Path
 
-from sentiment.headline import read_csv
+from sentiment.headline import Headline, read_csv
 from sentiment.market_hours import align_headline
 from sentiment.prices import PriceFetchError, bar_on, load_bars, next_session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
@@ -67,6 +67,15 @@ def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tupl
     for headlines whose company was recognised but whose ticker could not be
     fetched (see ``sentiment.tickers``)."""
     headlines = read_csv(in_path)
+    return build_rows_from_headlines(headlines, live=live)
+
+
+def build_rows_from_headlines(headlines: list[Headline], live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Same pairing ``build_rows`` does, from an already-loaded list of
+    ``Headline`` objects rather than a CSV path. Day 8's audit calls this
+    directly: it needs to rebuild rows many times over, each time with the
+    same headlines but a shuffled ``published_at``, without writing a CSV
+    for every shuffle."""
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
