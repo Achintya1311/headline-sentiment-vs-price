@@ -127,6 +127,23 @@ def mean_absolute_error(y_true: list[float], y_pred: list[float]) -> float:
     return sum(abs(yt - yp) for yt, yp in zip(y_true, y_pred)) / n
 
 
+def permutation_p_value(real_stat: float, null_stats: list[float]) -> float:
+    """Two-sided permutation p-value: the fraction of a null distribution
+    (e.g. a statistic recomputed under many random shuffles that should
+    destroy the real relationship) at least as extreme as ``real_stat``.
+
+    A *small* p-value here means the real statistic is unusually large next
+    to what random shuffling alone produces - evidence of a real
+    relationship. It says nothing about leakage by itself: Day 8's audit
+    uses this the other way around, to check that the real statistic is
+    *not* a surprising outlier against the null (see sentiment/audit.py).
+    """
+    if not null_stats:
+        raise ValueError("need at least 1 null-distribution sample")
+    extreme = sum(1 for s in null_stats if abs(s) >= abs(real_stat))
+    return extreme / len(null_stats)
+
+
 @dataclass(frozen=True)
 class BootstrapDiffResult:
     diff: float

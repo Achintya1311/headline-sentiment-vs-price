@@ -9,6 +9,7 @@ from sentiment.stats import (
     oos_r_squared,
     pearson_r,
     pearson_with_ci,
+    permutation_p_value,
     r_squared,
 )
 
@@ -150,3 +151,25 @@ def test_mean_absolute_error_basic():
 def test_mean_absolute_error_requires_at_least_one_point():
     with pytest.raises(ValueError):
         mean_absolute_error([], [])
+
+
+def test_permutation_p_value_real_stat_typical_of_null_gives_large_p():
+    # real stat sits well inside the null distribution's spread -> most of
+    # the null is at least as extreme -> p close to 1.
+    null = [-0.5, -0.2, 0.1, 0.2, 0.5]
+    assert permutation_p_value(0.15, null) == pytest.approx(4 / 5)
+
+
+def test_permutation_p_value_real_stat_more_extreme_than_entire_null_gives_zero():
+    null = [-0.1, 0.0, 0.05, -0.05]
+    assert permutation_p_value(0.9, null) == pytest.approx(0.0)
+
+
+def test_permutation_p_value_real_stat_equal_to_every_null_value_gives_one():
+    null = [0.3, 0.3, 0.3]
+    assert permutation_p_value(0.3, null) == pytest.approx(1.0)
+
+
+def test_permutation_p_value_requires_at_least_one_null_sample():
+    with pytest.raises(ValueError):
+        permutation_p_value(0.1, [])
