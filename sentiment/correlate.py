@@ -36,7 +36,7 @@ import csv
 import sys
 from pathlib import Path
 
-from sentiment.headline import read_csv
+from sentiment.headline import Headline, read_csv
 from sentiment.market_hours import align_headline
 from sentiment.prices import PriceFetchError, bar_on, load_bars, next_session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
@@ -63,10 +63,22 @@ ROW_FIELDNAMES = [
 
 
 def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Read ``in_path`` and pair each resolvable headline with its returns.
+
+    Thin wrapper around ``build_rows_from_headlines`` - see that function for
+    the actual resolve/align/price-fetch pipeline. Split out so Day 8's
+    ``sentiment.audit`` can run the identical pipeline against a list of
+    ``Headline`` objects it has itself time-shuffled, instead of a file on
+    disk - the audit has to exercise this exact code, not a reimplementation
+    of it, or it would not catch a leak actually living in this module.
+    """
+    return build_rows_from_headlines(read_csv(in_path), live=live)
+
+
+def build_rows_from_headlines(headlines: list[Headline], live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
     """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
     for headlines whose company was recognised but whose ticker could not be
     fetched (see ``sentiment.tickers``)."""
-    headlines = read_csv(in_path)
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
