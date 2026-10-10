@@ -84,6 +84,12 @@ python -m sentiment.overlay --window-before 8 --window-after 2
 python -m sentiment.audit
 python -m sentiment.audit --trials 500
 python -m sentiment.audit --live
+
+# Integration day: the v0.5 contract Stock Stalker's gate reads. One
+# ticker's trailing-window VADER score and headline count, written as a
+# file, never a Python import.
+python -m sentiment.contract --ticker INFY.NS
+python -m sentiment.contract --ticker INFY.NS --contract outputs/sentiment_contract.json
 ```
 
 No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
@@ -147,6 +153,10 @@ Run against the committed fixture: real contemporaneous r = **-0.185** (n=23, ma
 
 **Why this might be spurious - and why the "Done when" test as literally written can't actually be run here.** NEXT_STEPS.md's leakage control is "shuffle the timestamps and the signal must disappear." That presupposes a signal. Day 5 and Day 6 already found none on this fixture: the real contemporaneous r's own 95% CI comfortably contains zero, and the regression's predictor had zero variance to work with at all. There is nothing for shuffling to make disappear, so a PASS here is not evidence this pipeline would correctly kill a *real* signal if one existed - it is only evidence that shuffling does not conjure a fake one out of nothing, which is a much weaker and much easier claim to satisfy. Concretely, the audit as built only verifies two things: (1) the shuffle mechanism changes the pipeline's actual output (session assignment, and therefore the return paired with each compound score) rather than being a silent no-op - checked directly by `test_run_detects_a_no_op_shuffle_as_a_failure`, which has to fake a frozen, timestamp-ignoring pairing function to even exercise the failure path, because no real leak exists in this codebase to trigger it honestly; and (2) the real statistic is not a surprising outlier against the shuffled null, which a near-zero real r on a near-zero null will satisfy almost automatically regardless of whether the pipeline is sound. A pipeline with a genuine look-ahead leak - say, `bar_on` silently falling back to the most recent bar regardless of `session_date` - would not necessarily be caught by this run either, because with 23 headlines spread thinly across price histories that are themselves mostly single-bar or two-bar fixtures, "the most recent bar" and "the correctly-aligned bar" frequently coincide by construction, leak or no leak. The honest status: this audit is a real, reusable leakage control with a real failing case demonstrated in tests, but it has not been - and on this fixture, cannot be - stress-tested against a dataset that actually contains the kind of signal it exists to protect.
 
+**Integration day - v0.5 sentiment contract.** `sentiment/contract.py` builds the per-ticker block the spine reads: `score_7d` (the mean VADER `compound` over that ticker's headlines in a trailing window, default 7 days) and `headline_count_7d`, keyed to one ticker via `sentiment.tickers.resolve` the same way `sentiment.correlate` already does. The window anchors to the latest headline timestamp *for that ticker* in the sample, not the wall clock - this fixture has no live "today," the same fixture-relative-"now" choice Day 5/6 already made. `python -m sentiment.contract --ticker INFY.NS --contract outputs/sentiment_contract.json` writes `{"sentiment": {"score_7d": 0.296, "headline_count_7d": 1, "model": "vader", "coverage": "partial"}}` - a real number from the one Infosys headline this fixture resolves, not a fabricated one.
+
+Two honest deviations from NEXT_STEPS.md's contract example, both recorded rather than hidden: `model` ships `"vader"`, not `"finbert"`, because FinBERT cannot run in this sandbox (no `torch`, documented since Day 3). And running Stock Stalker's `stockstalker.gates.sentiment` against this repo's real output against its own 3-ticker fixture universe (RELIANCE.NS/TATACHEM.NS/CROMPTON.NS) finds zero overlap with any of this repo's 23 resolved tickers - the same honest non-match v0.7's valuation-gate integration already hit with GULFOILLUB. Stock Stalker's own tests exercise the gate's matching logic with a synthetic contract keyed to a universe ticker instead; see that repo's README for the full write-up.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -183,21 +193,25 @@ Run against the committed fixture: real contemporaneous r = **-0.185** (n=23, ma
 - Day 7's "market" is a proxy, not a real benchmark: the equal-weighted mean return of the same 23-ticker universe Day 5 resolved headlines against, because no free NSE index fixture (NIFTY 50 or similar) is committed to this repo. Abnormal return here means "in excess of this specific 23-name sample," which is itself sentiment-selected, not "in excess of the market" in the usual sense - a real index would need a new data source wired in first.
 - The cumulative abnormal return chart's high-magnitude group has n=3 - the same 3 headlines Day 5's event study already used, because they are the only ones in this fixture that are not saturated at `compound = 0.296`. A 3-headline average cannot support a causal claim about sentiment and abnormal returns; the chart is a descriptive trajectory, not a tested effect, and one bad-fit case (Fortis Healthcare, see Findings) is outvoted by two better-fit ones in the average.
 - The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented.
-- Day 8's leakage audit (`sentiment.audit`) cannot test its own headline claim ("shuffle the timestamps and the signal must disappear") on this fixture, because Day 5/6 already found no signal here to disappear. What it actually verifies - that shuffling changes the pipeline's output rather than being a no-op, and that the real correlation is not a suspicious outlier against the shuffled null - is a real control with a tested failure mode, but it is weaker than the stated one and would not reliably catch every kind of look-ahead leak (e.g. a price-lookup bug that happens to return the same bar whether or not the alignment is correct, because this fixture's price histories are mostly one or two bars long). A dataset with a genuine, strong real signal would be needed to actually stress-test the "signal disappears under shuffling" claim. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
+- Day 8's leakage audit (`sentiment.audit`) cannot test its own headline claim ("shuffle the timestamps and the signal must disappear") on this fixture, because Day 5/6 already found no signal here to disappear. What it actually verifies - that shuffling changes the pipeline's output rather than being a no-op, and that the real correlation is not a suspicious outlier against the shuffled null - is a real control with a tested failure mode, but it is weaker than the stated one and would not reliably catch every kind of look-ahead leak (e.g. a price-lookup bug that happens to return the same bar whether or not the alignment is correct, because this fixture's price histories are mostly one or two bars long). A dataset with a genuine, strong real signal would be needed to actually stress-test the "signal disappears under shuffling" claim.
+- The v0.5 spine contract (`sentiment/contract.py`) ships `model: "vader"` rather than `"finbert"` - FinBERT needs `torch`, which is not installed in this sandbox (the same Day 3 gap every checkpoint since has recorded). Any `score_7d` Stock Stalker's gate attaches should be read as a general-purpose lexicon score, with VADER's own documented finance-jargon blind spot (Day 2 Findings), not a finance-tuned one, until this repo runs somewhere with network access and a cached FinBERT model. Separately, the integration itself is a real non-match: none of this repo's 23 resolved tickers is in Stock Stalker's 3-ticker fixture universe, so no live candidate has actually received a real sentiment score yet - see Stock Stalker's own README for the matching-path test that stands in for it. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
 
 ## Where this sits
 
-Part of a nine-repo research pipeline. Stock Stalker screens the NSE universe; this repo publishes a versioned artifact it reads back:
+Part of a nine-repo research pipeline. Stock Stalker screens the NSE universe; this repo publishes a versioned artifact it reads back via `python -m sentiment.contract --ticker <TICKER> --contract <path>` (see `sentiment/contract.py`):
 
 ```json
 {
   "sentiment": {
     "score_7d": 0.31,
     "headline_count_7d": 12,
-    "model": "finbert"
+    "model": "vader",
+    "coverage": "partial"
   }
 }
 ```
+
+`model` ships `"vader"`, not the `"finbert"` this block's original example showed - FinBERT cannot run in this sandbox (no `torch`, the same gap every checkpoint since Day 3 has recorded), and shipping "finbert" because the shape anticipated it would be exactly the kind of invented value this portfolio exists to avoid. **Integration day (v0.5):** Stock Stalker's `stockstalker.gates.sentiment` reads this file and attaches it to the one screen candidate whose ticker matches. The real run - this repo's 23 resolved tickers against Stock Stalker's 3-ticker fixture universe (RELIANCE/TATACHEM/CROMPTON) - has zero overlap, the same honest non-match v0.7's integration already hit; see that repo's README for the synthetic-contract test that exercises the matching path instead.
 
 Communication is by file contract, not imports, so either side can be refactored without breaking the other.
 
