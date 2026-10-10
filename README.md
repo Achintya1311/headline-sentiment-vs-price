@@ -85,6 +85,10 @@ python -m sentiment.overlay --window-before 8 --window-after 2
 python -m sentiment.audit
 python -m sentiment.audit --trials 2000 --seed 1
 python -m sentiment.audit --live
+
+# Integration (v0.5): the trailing sentiment contract Stock Stalker's
+# stockstalker.gates.sentiment reads as a file, never a Python import.
+python -m sentiment.contract --ticker FORTIS.NS --contract outputs/sentiment_contract.json
 ```
 
 No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
@@ -150,6 +154,12 @@ To check the audit mechanism itself has power (an audit that always passes is no
 
 The CLI (`python -m sentiment.audit`) was run by hand against the real fixture, against the synthetic case inside the test (via `run_audit`), and with `--trials 2000` and three different seeds to confirm the real-fixture verdict (p in the 0.09-0.13 range throughout) does not depend on a favorably-chosen seed.
 
+**Integration (v0.5) - Stock Stalker sentiment gate.** `sentiment/contract.py` publishes the trailing sentiment contract NEXT_STEPS.md fixed before this module existed - `{"sentiment": {"score_7d", "headline_count_7d", "model", "coverage"}}` - as a JSON file via `--contract`, never a Python import. On the spine side, STOCKSTALKER's new `stockstalker.gates.sentiment` reads that file and attaches it to the one screen candidate whose ticker matches; `report.py`'s new `--sentiment-contract`/`--sentiment-ticker` flags apply the gate and add two columns (`Sentiment 7d`, `Headlines(7d)`) to the screen table when populated.
+
+Two honest deviations from the planned contract, both from sandbox limits rather than a design choice: `model` ships `"vader"`, not `"finbert"` - FinBERT needs torch, which this sandbox has never been able to install (the same gap every day's Findings since Day 3 records), so there is no working FinBERT score to report. And like v0.7's GULFOILLUB non-match, the real integration is a non-match: none of this repo's 23 resolved tickers (see Day 5) is in STOCKSTALKER's 3-ticker fixture universe (RELIANCE.NS/TATACHEM.NS/CROMPTON.NS) - the real demonstration ticker is `FORTIS.NS` (`score_7d=+0.7003`, `headline_count_7d=1`, `coverage=full`, the same VADER finance-jargon miss Day 7 found), and the gate's matching logic is proven end to end against a synthetic contract keyed to `RELIANCE.NS` instead, exactly the same workaround reverse-dcf-engine's README already recorded for the same reason.
+
+`headline_count_7d` is 1 for every ticker in this fixture, not a meaningful trailing count: every one of the 50 scraped headlines was published on the same single calendar day (Monday 28 Sep 2026, see Day 4), and `sentiment/tickers.py` resolves at most one headline per company in this corpus (see Day 5), so the 7-day trailing window this contract's shape implies is never actually exercised against more than one day's data - a wider, multi-day scrape would be needed before this count means what the key name suggests.
+
 ## Why this result might still be spurious
 
 Passing the leakage audit is not the same as proving this pipeline could never leak, and a null correlation is not the same as "no relationship exists." Both claims are narrower than they look:
@@ -197,6 +207,7 @@ Passing the leakage audit is not the same as proving this pipeline could never l
 - The cumulative abnormal return chart's high-magnitude group has n=3 - the same 3 headlines Day 5's event study already used, because they are the only ones in this fixture that are not saturated at `compound = 0.296`. A 3-headline average cannot support a causal claim about sentiment and abnormal returns; the chart is a descriptive trajectory, not a tested effect, and one bad-fit case (Fortis Healthcare, see Findings) is outvoted by two better-fit ones in the average.
 - The number of headlines contributing to the CAR average is not constant across the offset window: offsets near the edge of the fixture's date range (particularly +1 for Tuesday-aligned headlines) have fewer contributing headlines than offset 0, the same "next session hasn't traded yet" gap Day 5/6 already documented.
 - `.github/workflows/ci.yml` is new as of Day 8 - there was no CI at all through Day 7, so the "Correctness gate" language in earlier days' README text described an intent, not a running check, until now. The workflow deselects `test_finbert_score.py`, `test_finbert_cli.py`, and `test_agreement.py` (the 13 tests that need `torch`, unavailable in this sandbox per Day 3's Limitations) rather than reporting them as CI failures for an environment gap unrelated to any one day's change - which means CI does not currently cover FinBERT or the VADER/FinBERT agreement analysis at all, only that those modules import correctly. A trading-day count is printed alongside the CLI's offset-0 summary but not shown per-point on the chart itself.
+- The v0.5 sentiment contract ships `"model": "vader"`, not the `"finbert"` NEXT_STEPS.md's contract shape names, because FinBERT needs torch and torch has never installed in this sandbox (Day 3). It also never produces a real match against STOCKSTALKER's 3-ticker fixture universe - none of this repo's 23 resolved tickers overlaps it - so the gate's logic is verified against a synthetic RELIANCE.NS contract rather than a genuine shared-ticker match, the same shape v0.7's GULFOILLUB integration already recorded for the same reason. `headline_count_7d` is always 1 on this fixture (every ticker has exactly one resolved headline, all from the same calendar day), so it does not yet exercise a real multi-headline trailing count.
 
 ## Where this sits
 
