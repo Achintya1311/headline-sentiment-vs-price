@@ -18,17 +18,16 @@ jobs:
           cache: pip
 
       - name: Install
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          # CPU-only torch wheel (free) so the FinBERT tests run in CI instead of being skipped.
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Tests
-        # test_finbert_*.py and test_agreement.py need torch, which this
-        # project deliberately does not install by default (see README "How
-        # to run" and requirements.txt) - a documented, pre-existing gap,
-        # not something this workflow should report as a CI failure.
         # Plain scripts layout (no pyproject), so the repo root must be on
         # sys.path: `python -m pytest`, not bare `pytest` (which cannot import
         # `sentiment` here - verified, 18 collection errors).
-        run: python -m pytest -q --ignore=tests/test_finbert_score.py --ignore=tests/test_finbert_cli.py --ignore=tests/test_agreement.py
+        run: python -m pytest -q
 
       - name: Leakage audit - shuffle headline timestamps, the signal must disappear
         # The "Done when" gate from NEXT_STEPS.md, run directly and not just
@@ -36,3 +35,6 @@ jobs:
         # reproduces the real correlation, the pipeline is leaking and the
         # build should fail loudly, not just log a warning.
         run: python -m sentiment.audit
+
+      - name: Leakage audit - lagged correlation and Day 6 regression
+        run: python -m sentiment.leakage_audit
