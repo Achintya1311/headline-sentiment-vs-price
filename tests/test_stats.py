@@ -9,6 +9,8 @@ from sentiment.stats import (
     oos_r_squared,
     pearson_r,
     pearson_with_ci,
+    PermutationResult,
+    percentile_ci,
     permutation_p_value,
     r_squared,
 )
@@ -176,3 +178,68 @@ def test_permutation_p_value_never_reports_exactly_zero():
 def test_permutation_p_value_rejects_empty_null():
     with pytest.raises(ValueError):
         permutation_p_value(0.5, [])
+
+# Tests recovered from parallel Day 8 runs (percentile_ci, permutation_p_value edge cases).
+
+def test_percentile_ci_contains_the_middle_of_a_known_distribution():
+    values = list(range(1, 101))  # 1..100
+    lo, hi = percentile_ci(values, ci=0.95)
+    # 95% interval should trim roughly the bottom/top 2.5 values each side.
+    assert lo == pytest.approx(3, abs=1)
+    assert hi == pytest.approx(98, abs=1)
+
+def test_percentile_ci_excludes_zero_when_the_distribution_never_crosses_it():
+    values = [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9]
+    lo, hi = percentile_ci(values)
+    assert lo > 0.0
+    assert hi > 0.0
+
+def test_percentile_ci_includes_zero_when_the_distribution_straddles_it():
+    values = [-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0]
+    lo, hi = percentile_ci(values)
+    assert lo <= 0.0 <= hi
+
+def test_percentile_ci_requires_at_least_one_value():
+    with pytest.raises(ValueError):
+        percentile_ci([])
+
+def test_permutation_p_value_requires_at_least_one_null_sample():
+    with pytest.raises(ValueError):
+        permutation_p_value(1.0, [])
+
+def test_permutation_p_value_real_stat_equal_to_every_null_value_gives_one():
+    null = [0.3, 0.3, 0.3]
+    assert permutation_p_value(0.3, null) == pytest.approx(1.0)
+
+def test_permutation_p_value_requires_at_least_one_null_sample_v2():
+    with pytest.raises(ValueError):
+        permutation_p_value(0.1, [])
+
+def test_permutation_p_value_is_two_sided():
+    # a strongly negative observed value should be treated the same as the
+    # equally strongly positive one - this is a two-sided test by design.
+    null_samples = [0.0, 0.1, -0.1, 0.2, -0.2]
+    assert permutation_p_value(-0.9, null_samples) == permutation_p_value(0.9, null_samples)
+
+def test_permutation_p_value_requires_at_least_one_null_sample_v3():
+    with pytest.raises(ValueError):
+        permutation_p_value(0.5, [])
+
+def test_permutation_p_value_uses_absolute_value_two_sided():
+    # a real_r of -0.95 is just as extreme against this null as +0.95
+    null_rs = [0.0] * 50
+    assert permutation_p_value(0.95, null_rs) == permutation_p_value(-0.95, null_rs)
+
+def test_permutation_p_value_never_reports_impossible_from_a_finite_sample():
+    # even a real_r nothing in the null comes close to still gets p > 0,
+    # not 0 - a finite number of shuffles can only make a result "rare",
+    # never "proven impossible under the null".
+    null_rs = [0.0] * 50
+    p = permutation_p_value(1.0, null_rs)
+    assert p > 0.0
+
+
+def test_permutation_result_null_mean_and_std():
+    r = PermutationResult(observed=1.0, null_samples=[0.0, 2.0], p_value=0.5)
+    assert r.null_mean == pytest.approx(1.0)
+    assert r.null_std == pytest.approx(1.0)

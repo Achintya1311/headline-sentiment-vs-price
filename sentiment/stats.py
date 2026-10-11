@@ -186,3 +186,34 @@ def bootstrap_mean_diff_ci(
         n_a=len(group_a),
         n_b=len(group_b),
     )
+
+
+def percentile_ci(values: list[float], ci: float = 0.95) -> tuple[float, float]:
+    """Two-sided percentile interval of ``values`` - e.g. the empirical null
+    distribution a permutation/shuffle test produces. Not model-based, so it
+    needs no assumption about the shape of ``values``' distribution."""
+    if not values:
+        raise ValueError("need at least one value")
+    tail = (1 - ci) / 2
+    ordered = sorted(values)
+    n = len(ordered)
+    lo = ordered[int(tail * n)]
+    hi = ordered[min(int((1 - tail) * n), n - 1)]
+    return lo, hi
+
+
+@dataclass(frozen=True)
+class PermutationResult:
+    observed: float
+    null_samples: list[float]
+    p_value: float
+
+    @property
+    def null_mean(self) -> float:
+        return sum(self.null_samples) / len(self.null_samples)
+
+    @property
+    def null_std(self) -> float:
+        mean = self.null_mean
+        var = sum((x - mean) ** 2 for x in self.null_samples) / len(self.null_samples)
+        return math.sqrt(var)

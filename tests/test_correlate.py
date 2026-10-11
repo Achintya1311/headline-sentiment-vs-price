@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import sentiment.prices as prices
-from sentiment.correlate import build_rows, run
-from sentiment.headline import Headline, write_csv
+from sentiment.correlate import build_rows, build_rows_from_headlines, run
+from sentiment.headline import Headline, read_csv, write_csv
 from sentiment.prices import Bar, save_fixture
 
 
@@ -186,3 +186,17 @@ def test_run_against_committed_fixture_produces_the_expected_headline_count(tmp_
     # 24 headlines resolve to a single company, one (LTIMindtree) has no
     # fetchable ticker - see sentiment/tickers.py and the README Findings.
     assert len(rows) == 23
+
+
+def test_build_rows_from_headlines_matches_build_rows_on_the_committed_fixture():
+    # build_rows is now a thin read_csv + build_rows_from_headlines wrapper
+    # (Day 8's shuffle audit needs the latter directly, to re-run the same
+    # pairing logic against a shuffled headline list without a scratch CSV)
+    # - this pins the two to stay in lockstep.
+    fixture = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_raw.csv"
+
+    rows_via_path, unresolved_via_path = build_rows(fixture)
+    rows_via_headlines, unresolved_via_headlines = build_rows_from_headlines(read_csv(fixture))
+
+    assert rows_via_headlines == rows_via_path
+    assert unresolved_via_headlines == unresolved_via_path
