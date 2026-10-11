@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 import sentiment.prices as prices
 from sentiment.headline import Headline, write_csv
 from sentiment.leakage_audit import (
