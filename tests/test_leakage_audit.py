@@ -80,8 +80,8 @@ def test_compute_metrics_reports_none_test_r2_on_a_degenerate_split_not_a_crash(
 def test_compute_metrics_recovers_a_real_relationship():
     rows = [{"compound": x, "lagged_return": 0.01 * x} for x in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]]
     metrics = compute_metrics(rows, train_frac=0.7)
-    assert metrics.lagged_r == 1.0
-    assert metrics.test_r2 == 1.0
+    assert metrics.lagged_r == pytest.approx(1.0)
+    assert metrics.test_r2 == pytest.approx(1.0)
 
 
 def test_percentile_rank_counts_at_or_above():
@@ -100,8 +100,8 @@ def test_run_audit_against_the_real_fixture_matches_the_documented_degenerate_ca
 
     assert result.real.n_resolved == 23
     assert result.real.n_lagged == 15
-    assert result.real.lagged_r == 0.0
-    assert result.real.test_r2 == 0.0
+    assert result.real.lagged_r == pytest.approx(0.0, abs=1e-9)
+    assert result.real.test_r2 == pytest.approx(0.0, abs=1e-9)
     assert len(result.null) == 200
 
 
