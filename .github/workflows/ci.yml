@@ -38,3 +38,6 @@ jobs:
 
       - name: Leakage audit - lagged correlation and Day 6 regression
         run: python -m sentiment.leakage_audit
+
+      - name: Robustness checks - move-naming headlines, market-wide shocks, feed timestamps
+        run: python -m sentiment.robustness
