@@ -9,6 +9,7 @@ from sentiment.stats import (
     oos_r_squared,
     pearson_r,
     pearson_with_ci,
+    permutation_p_value,
     r_squared,
 )
 
@@ -150,3 +151,28 @@ def test_mean_absolute_error_basic():
 def test_mean_absolute_error_requires_at_least_one_point():
     with pytest.raises(ValueError):
         mean_absolute_error([], [])
+
+
+def test_permutation_p_value_small_when_real_r_is_extreme_outlier():
+    # The real statistic sits far outside a null that never gets near it -
+    # Day 8's audit flags exactly this shape as leak-like.
+    perm_rs = [0.01, -0.02, 0.03, -0.01, 0.02, 0.0, -0.015]
+    assert permutation_p_value(0.9, perm_rs) == pytest.approx(1 / 8)
+
+
+def test_permutation_p_value_large_when_real_r_looks_like_the_null():
+    perm_rs = [0.2, -0.25, 0.18, -0.19, 0.22, -0.21, 0.17, -0.2]
+    p = permutation_p_value(0.19, perm_rs)
+    assert p > 0.5
+
+
+def test_permutation_p_value_never_reports_exactly_zero():
+    perm_rs = [0.01] * 1000
+    p = permutation_p_value(0.99, perm_rs)
+    assert p > 0.0
+    assert p == pytest.approx(1 / 1001)
+
+
+def test_permutation_p_value_rejects_empty_null():
+    with pytest.raises(ValueError):
+        permutation_p_value(0.5, [])

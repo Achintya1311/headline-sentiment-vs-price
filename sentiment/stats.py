@@ -127,6 +127,24 @@ def mean_absolute_error(y_true: list[float], y_pred: list[float]) -> float:
     return sum(abs(yt - yp) for yt, yp in zip(y_true, y_pred)) / n
 
 
+def permutation_p_value(real_r: float, perm_rs: list[float]) -> float:
+    """Two-sided permutation p-value for a correlation statistic.
+
+    ``perm_rs`` is the null distribution of the same statistic recomputed
+    under many random re-pairings (Day 8's shuffle-timestamp audit builds
+    one by re-running the alignment pipeline under a shuffled headline
+    timestamp each time). The p-value is the fraction of that null at least
+    as extreme as ``real_r``, with the standard +1/+1 correction so a
+    finite number of permutations never reports an impossible p=0 - the
+    true p-value could be smaller than 1/(n_perm+1), just not exactly zero.
+    """
+    if not perm_rs:
+        raise ValueError("need at least one permutation")
+    n_perm = len(perm_rs)
+    more_extreme = sum(1 for r in perm_rs if abs(r) >= abs(real_r))
+    return (more_extreme + 1) / (n_perm + 1)
+
+
 @dataclass(frozen=True)
 class BootstrapDiffResult:
     diff: float
