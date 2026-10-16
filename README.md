@@ -4,6 +4,8 @@ Scores financial headlines and tests them against subsequent returns, with a lea
 
 **Status:** Complete (Oct 2026). Next: a larger headline corpus and a FinBERT-scored contract. Part of a nine-repo equity research pipeline; [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
 
+*Educational research on historical data. Not investment advice. Not a SEBI-registered research analyst.*
+
 ## What this is
 
 Scrapes headlines with timestamps, scores them with VADER as a baseline and FinBERT as the finance-tuned upgrade, then tests correlation and predictive power out of sample.
