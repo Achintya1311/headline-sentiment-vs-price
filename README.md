@@ -2,7 +2,7 @@
 
 Scores financial headlines and tests them against subsequent returns, with a leakage control that has to fail before any result is believed.
 
-**Status:** Last checkpoint 2026-10-11 · Next: three-statement-model Day 1 - historical statement ingestion into normalized schema
+**Status:** Complete (Oct 2026). Next: a larger headline corpus and a FinBERT-scored contract. Part of a nine-repo equity research pipeline; [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
 
 ## What this is
 
