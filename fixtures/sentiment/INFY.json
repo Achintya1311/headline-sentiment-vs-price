@@ -1,0 +1,8 @@
+{
+  "sentiment": {
+    "score_7d": null,
+    "headline_count_7d": 0,
+    "model": "finbert",
+    "coverage": "none"
+  }
+}
