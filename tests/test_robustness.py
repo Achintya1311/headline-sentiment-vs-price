@@ -2,14 +2,22 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from pathlib import Path
+
 from sentiment.headline import Headline
 from sentiment.robustness import (
-    DEFAULT_IN,
     names_price_move,
     run,
     session_demeaned_r,
     timestamp_integrity,
     within_session_permutation,
+)
+
+# frozen 50-row regression snapshot, not the live headlines_raw.csv the daily
+# scrape workflow keeps appending to - otherwise these counts drift every
+# time that workflow commits (D10).
+REGRESSION_FIXTURE = (
+    Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_regression_50.csv"
 )
 
 T0 = datetime(2026, 9, 28, 4, 0, tzinfo=timezone.utc)
@@ -100,7 +108,7 @@ def test_timestamp_integrity_flags_a_batch_stamped_instant():
 
 
 def test_run_on_the_committed_fixture_reports_and_exits_zero(capsys):
-    assert run(DEFAULT_IN, n_perm=100, seed=0) == 0
+    assert run(REGRESSION_FIXTURE, n_perm=100, seed=0) == 0
     out = capsys.readouterr().out
     assert "6 of 23 headlines name a price move" in out
     assert "feed timestamps: all checks passed" in out

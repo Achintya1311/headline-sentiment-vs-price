@@ -33,11 +33,14 @@ def test_index_level_headline_is_not_resolved():
 
 
 def test_resolves_all_and_only_the_expected_headlines_in_the_committed_fixture():
+    # pinned to the frozen 50-row regression snapshot, not the live
+    # headlines_raw.csv the daily scrape workflow keeps appending to -
+    # otherwise this count drifts every time that workflow commits (D10).
     from pathlib import Path
 
     from sentiment.headline import read_csv
 
-    fixture = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_raw.csv"
+    fixture = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_regression_50.csv"
     headlines = read_csv(fixture)
     resolved = [h.title for h in headlines if resolve(h.title) is not None]
     assert len(resolved) == 24

@@ -1,10 +1,10 @@
 import json
 from datetime import date, datetime, timezone
+from pathlib import Path
 
 import pytest
 
 from sentiment.contract import (
-    DEFAULT_IN,
     build_contract,
     coverage_for,
     headlines_in_window,
@@ -155,8 +155,17 @@ def test_run_fails_fast_when_headlines_file_is_missing(tmp_path):
 
 
 def test_run_against_the_real_committed_fixture_for_infosys(tmp_path):
+    # pinned to the frozen 50-row regression snapshot, not the live
+    # headlines_raw.csv the daily scrape workflow keeps appending to: the
+    # default --as-of (latest session in the fixture) slides forward as
+    # real headlines land, pushing this INFY headline's session out of the
+    # 7-day window - a live consequence of the corpus-growth automation
+    # actually working, not a bug in the default (D10).
+    regression_fixture = (
+        Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_regression_50.csv"
+    )
     out_path = tmp_path / "sentiment_contract_test.json"
-    exit_code = run(DEFAULT_IN, "INFY.NS", "vader", None, 7, out_path)
+    exit_code = run(regression_fixture, "INFY.NS", "vader", None, 7, out_path)
     assert exit_code == 0
     written = json.loads(out_path.read_text())
     assert written["sentiment"]["headline_count_7d"] == 1

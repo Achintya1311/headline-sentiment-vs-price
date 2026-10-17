@@ -51,7 +51,10 @@ def test_run_missing_input_reports_failure(tmp_path: Path):
 
 
 def test_run_against_committed_fixture_aligns_all_fifty_leak_free(tmp_path: Path):
-    fixture = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_raw.csv"
+    # pinned to the frozen 50-row regression snapshot, not the live
+    # headlines_raw.csv the daily scrape workflow keeps appending to -
+    # otherwise this count drifts every time that workflow commits (D10).
+    fixture = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_regression_50.csv"
     out_path = tmp_path / "aligned.csv"
 
     exit_code = run(fixture, out_path)
