@@ -1,0 +1,66 @@
+name: Daily headline collection
+
+# D3 (hub CRITIQUES.md): the committed corpus was one 50-headline snapshot
+# from a single Day 1 scrape. This grows it for real, one day at a time,
+# using the already-tested sentiment.scrape CLI - no new scraping logic
+# here, just wiring it to run without anyone starting it by hand.
+#
+# Only economic_times_markets is fetched: per README Findings, it is the
+# only one of the three registered feeds whose robots.txt allows this
+# project's user agent (moneycontrol.com's robots.txt itself 403s; Reuters'
+# feed host is unreachable from a sandbox - sentiment.scrape would mark
+# both "robots_denied"/"fetch_failed" and skip them anyway, but asking for
+# just the allowed feed keeps a run that is already a no-op from also
+# logging two permission failures every single day).
+#
+# 16:15 UTC = 21:45 IST, after the NSE close, so each run's scrape covers
+# that day's market headlines.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/collect-headlines.yml"
+  schedule:
+    - cron: "15 16 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        # Scraping needs none of requirements.txt's heavier deps (torch,
+        # transformers, matplotlib) - just the feed parser's own.
+        run: pip install requests beautifulsoup4 lxml
+
+      - name: Scrape Economic Times markets RSS (best effort)
+        # A market holiday or a transient fetch error is not a failure:
+        # sentiment.scrape already reports a denied/failed feed to stderr
+        # and exits non-zero, and merge_and_write's dedup makes "nothing
+        # new" a normal, quiet outcome, not a bug - continue-on-error keeps
+        # a flaky day from paging anyone. The commit step below, not this
+        # one, is the real pass/fail signal for the day's run.
+        run: python -m sentiment.scrape --live --feed economic_times_markets
+        continue-on-error: true
+
+      - name: Commit if the corpus changed
+        run: |
+          git config user.name "Achintya1311"
+          git config user.email "67464985+Achintya1311@users.noreply.github.com"
+          git add fixtures/headlines fixtures/rss
+          if git diff --cached --quiet; then
+            echo "no new headlines today (holiday, quiet news day, or a repeat of what's already committed) - nothing to commit"
+            exit 0
+          fi
+          git commit -m "data: scrape Economic Times markets headlines ($(date -u +%Y-%m-%d))"
+          git push

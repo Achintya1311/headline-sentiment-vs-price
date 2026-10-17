@@ -1,0 +1,67 @@
+name: FinBERT sentiment contract
+
+# D3 (hub CRITIQUES.md): the shipped v0.5 spine contract (sentiment/contract.py)
+# reports model: "vader", not FinBERT, because this project's own sandbox has
+# never had torch installable (see README Limitations). GitHub Actions can
+# install the CPU-only torch wheel for free on a public repo, so FinBERT
+# scoring - and a real FinBERT contract - can run here even though it can't
+# run locally. Weekly, not daily: the corpus (collect-headlines.yml) only
+# grows by one feed's worth of headlines a day, so there is rarely enough
+# new material to change a 7-day window's score between daily runs, and the
+# ~440MB FinBERT download is cached by actions/setup-python's pip cache
+# plus HuggingFace's own on-disk cache within a run, not worth repeating daily.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/finbert-sentiment-contract.yml"
+  schedule:
+    - cron: "40 3 * * 0"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  finbert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install (incl. CPU-only torch)
+        run: |
+          pip install -r requirements.txt
+          # Same CPU-only wheel as ci.yml - far smaller than the default
+          # PyPI build, which drags in unneeded CUDA libraries.
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Score the corpus with FinBERT
+        # Not consumed by the next step directly (sentiment.contract scores
+        # its own matched headlines internally) - this is the Day 3 CLI
+        # itself, run for real so its label distribution is logged here
+        # instead of only ever running against the uninstallable-locally gap.
+        run: python -m sentiment.finbert
+
+      - name: Build the FinBERT spine contract for INFY.NS
+        # INFY.NS is the one ticker the v0.5 integration day already
+        # verified resolves headlines in this fixture (README "Integration
+        # day" section) - same ticker, now with model=finbert instead of
+        # the vader fallback.
+        run: python -m sentiment.contract --ticker INFY.NS --model finbert --out fixtures/sentiment/INFY.json
+
+      - name: Commit if the contract changed
+        run: |
+          git config user.name "Achintya1311"
+          git config user.email "67464985+Achintya1311@users.noreply.github.com"
+          git add fixtures/sentiment/INFY.json
+          if git diff --cached --quiet; then
+            echo "contract unchanged - no new scored headlines resolving to INFY.NS since the last run"
+            exit 0
+          fi
+          git commit -m "data: regenerate FinBERT sentiment contract for INFY.NS ($(date -u +%Y-%m-%d))"
+          git push
