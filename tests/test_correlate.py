@@ -175,7 +175,10 @@ def test_run_missing_input_reports_failure(tmp_path: Path):
 
 
 def test_run_against_committed_fixture_produces_the_expected_headline_count(tmp_path: Path):
-    fixture = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_raw.csv"
+    # pinned to the frozen 50-row regression snapshot, not the live
+    # headlines_raw.csv the daily scrape workflow keeps appending to -
+    # otherwise this count drifts every time that workflow commits (D10).
+    fixture = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_regression_50.csv"
     out_path = tmp_path / "correlation.csv"
 
     exit_code = run(fixture, out_path, live=False, event_threshold=0.3)

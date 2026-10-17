@@ -14,7 +14,10 @@ from sentiment.leakage_audit import (
 )
 from sentiment.prices import Bar, save_fixture
 
-FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_raw.csv"
+# frozen 50-row regression snapshot, not the live headlines_raw.csv the daily
+# scrape workflow keeps appending to - otherwise the hardcoded n_resolved/
+# n_lagged counts below drift every time that workflow commits (D10).
+FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_regression_50.csv"
 
 
 def make_headline(title: str, link: str, published_at: datetime) -> Headline:

@@ -146,7 +146,10 @@ def test_run_against_committed_fixture_matches_the_documented_degenerate_case(tm
     # The real, honest Day 6 finding (see README): all 15 headlines with a
     # next-day return share the identical VADER compound score, so the fit
     # is mechanically valid but has nothing to explain, in train or test.
-    fixture = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_raw.csv"
+    # Pinned to the frozen 50-row regression snapshot, not the live
+    # headlines_raw.csv the daily scrape workflow keeps appending to -
+    # otherwise these counts drift every time that workflow commits (D10).
+    fixture = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_regression_50.csv"
     out_path = tmp_path / "regression.csv"
 
     exit_code = run(fixture, out_path, live=False, train_frac=0.7)
