@@ -63,4 +63,13 @@ jobs:
             exit 0
           fi
           git commit -m "data: scrape Economic Times markets headlines ($(date -u +%Y-%m-%d))"
-          git push
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected (likely a concurrent commit from finbert-sentiment-contract.yml, which can trigger on the same push) - rebasing and retrying"
+            git fetch origin main
+            git rebase origin/main
+          done
+          echo "push still failing after 3 attempts" >&2
+          exit 1
