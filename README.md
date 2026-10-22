@@ -250,17 +250,20 @@ Days 5-8 ran several related tests on one small sample, so a further pass over t
 
 ## Where this sits
 
-Part of a nine-repo research pipeline. Stock Stalker screens the NSE universe; this repo publishes a versioned artifact it reads back:
+Part of a nine-repo research pipeline. Stock Stalker screens the NSE universe; this repo publishes a versioned artifact it reads back. Real output of `python -m sentiment.contract --ticker INFY.NS` against the current committed corpus:
 
 ```json
 {
   "sentiment": {
-    "score_7d": 0.31,
-    "headline_count_7d": 12,
-    "model": "finbert"
+    "score_7d": null,
+    "headline_count_7d": 0,
+    "model": "vader",
+    "coverage": "none"
   }
 }
 ```
+
+Every field is empty because the INFY-resolved headline has aged out of the trailing 7-day window as the corpus grew past its original September snapshot — not a bug, the window is supposed to forget old headlines.
 
 Communication is by file contract, not imports, so either side can be refactored without breaking the other.
 
