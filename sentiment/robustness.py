@@ -105,13 +105,29 @@ def timestamp_integrity(headlines: list[Headline]) -> dict[str, list[str]]:
     future = [h.title for h in headlines if h.published_at > h.scraped_at]
     if future:
         issues["published after it was scraped"] = future
-    for key, label in ((lambda h: h.link, "same link, different published time"), (lambda h: h.title, "same title, different published time")):
-        seen: dict[str, set] = defaultdict(set)
-        for h in headlines:
-            seen[key(h)].add(h.published_at)
-        dup = [k for k, v in seen.items() if len(v) > 1]
-        if dup:
-            issues[label] = dup
+    seen_links: dict[str, set] = defaultdict(set)
+    for h in headlines:
+        seen_links[h.link].add(h.published_at)
+    dup_links = [k for k, v in seen_links.items() if len(v) > 1]
+    if dup_links:
+        issues["same link, different published time"] = dup_links
+
+    # A title repeat is only suspicious if its distinct published times
+    # outnumber its distinct links: a recurring daily template ("X Share
+    # Price Highlights") reused once per distinct article/link produces the
+    # same title with several different, correct times and must not be
+    # flagged. A genuine same-link retiming (fewer links than times) still is.
+    by_title: dict[str, list[Headline]] = defaultdict(list)
+    for h in headlines:
+        by_title[h.title].append(h)
+    dup_titles = []
+    for title, hs in by_title.items():
+        times = {h.published_at for h in hs}
+        links = {h.link for h in hs}
+        if len(times) > 1 and len(links) < len(times):
+            dup_titles.append(title)
+    if dup_titles:
+        issues["same title, different published time"] = dup_titles
     stamps: dict = defaultdict(list)
     for h in headlines:
         stamps[h.published_at].append(h.title)

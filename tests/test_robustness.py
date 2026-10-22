@@ -102,6 +102,24 @@ def test_timestamp_integrity_flags_the_same_link_with_two_publish_times():
     assert "same link, different published time" in timestamp_integrity(hs)
 
 
+def test_timestamp_integrity_ignores_a_recurring_template_title_on_distinct_links():
+    # "X Share Price Highlights" reused daily, once per distinct article/link:
+    # a real, correctly-timestamped headline each time, not a re-timed dup.
+    hs = [
+        head("Infosys Share Price Highlights", "l1", T0),
+        head("Infosys Share Price Highlights", "l2", T0 + timedelta(days=1)),
+        head("Infosys Share Price Highlights", "l3", T0 + timedelta(days=2)),
+    ]
+    assert "same title, different published time" not in timestamp_integrity(hs)
+
+
+def test_timestamp_integrity_still_flags_a_genuine_same_link_retiming_by_title():
+    # Same link re-timed under the same title: not explained by a distinct
+    # link, so the title-based check must still catch it.
+    hs = [head("a", "same", T0), head("a", "same", T0 + timedelta(days=2))]
+    assert "same title, different published time" in timestamp_integrity(hs)
+
+
 def test_timestamp_integrity_flags_a_batch_stamped_instant():
     hs = [head(f"t{i}", f"l{i}", T0) for i in range(5)]
     assert any("exact timestamp" in k for k in timestamp_integrity(hs))
