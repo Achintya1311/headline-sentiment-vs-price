@@ -109,7 +109,7 @@ python -m sentiment.leakage_audit
 python -m sentiment.robustness
 ```
 
-No API key is needed through Day 3 - RSS feeds are public, the VADER lexicon is vendored, and FinBERT (`ProsusAI/finbert`) is a public HuggingFace model. `.env.example` is for a later day's price data.
+This repo is offline-only, against committed fixtures, and no code here reads an API key or needs one at any day: RSS feeds are public, the VADER lexicon is vendored, FinBERT (`ProsusAI/finbert`) is a public HuggingFace model, and Day 5's `sentiment/prices.py` price fetch is yfinance's free public chart endpoint, keyless like the rest of the portfolio.
 
 ## Findings
 
