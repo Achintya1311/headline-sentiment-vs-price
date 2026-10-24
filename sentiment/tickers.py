@@ -67,3 +67,13 @@ def known_tickers() -> list[str]:
     the companies this table can already name, rather than only fetching a
     ticker the first time a headline naming it happens to resolve."""
     return sorted({ticker for _, _, ticker in _RULES if ticker is not None})
+
+
+def known_companies() -> list[str]:
+    """Every distinct company name this table can resolve to a priced
+    ticker, sorted (Day 84, hub CRITIQUES.md R18). Used by
+    ``sentiment.scrape_gdelt`` to scope GDELT queries to companies this
+    resolver already knows how to pair with a return - querying for a
+    company with no ticker here (e.g. LTIMindtree) would only ever grow the
+    ``unresolved``/``unresolvable`` bucket, never a usable row."""
+    return sorted({company for _, company, ticker in _RULES if ticker is not None})

@@ -15,6 +15,72 @@ from dataclasses import dataclass
 
 # z critical value for a 95% two-sided normal confidence interval.
 Z_95 = 1.959963985
+# z critical value for 80% power (one-sided: P(Z > z) = 0.20).
+Z_80 = 0.841621234
+
+
+def _inverse_normal_cdf(p: float) -> float:
+    """Standard normal quantile function (inverse CDF), Peter Acklam's
+    rational approximation - relative error < 1.15e-9 across (0, 1), no
+    scipy dependency (see this module's own docstring for why). Used by
+    ``minimum_detectable_r``/``required_n_for_r`` so those aren't limited to
+    the two hardcoded alpha/power combinations ``Z_95``/``Z_80`` already
+    cover.
+    """
+    if not 0.0 < p < 1.0:
+        raise ValueError("p must be strictly between 0 and 1")
+    # Coefficients for the rational approximations, split into a central
+    # region and two tails for numerical accuracy.
+    a = (-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+         1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00)
+    b = (-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+         6.680131188771972e+01, -1.328068155288572e+01)
+    c = (-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+         -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00)
+    d = (7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+         3.754408661907416e+00)
+    p_low, p_high = 0.02425, 1 - 0.02425
+    if p < p_low:
+        q = math.sqrt(-2 * math.log(p))
+        return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+            (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1
+        )
+    if p > p_high:
+        q = math.sqrt(-2 * math.log(1 - p))
+        return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+            (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1
+        )
+    q = p - 0.5
+    r = q * q
+    return (
+        (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q
+    ) / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1)
+
+
+def minimum_detectable_r(n: int, alpha: float = 0.05, power: float = 0.80) -> float:
+    """Smallest |r| a sample of size ``n`` can detect at the given ``power``,
+    two-sided test of size ``alpha`` - the standard Fisher-z
+    minimum-detectable-effect approximation (e.g. Cohen's ``n.r`` formula):
+    z_crit = z(1 - alpha/2) + z(power), then invert the Fisher z-transform
+    ``pearson_with_ci`` already uses for its CI (se = 1/sqrt(n-3)).
+
+    This is an approximation (asymptotically normal, like the CI itself),
+    not an exact small-sample result - good enough to size a pre-registered
+    data gate, not to certify a borderline p-value.
+    """
+    if n <= 3:
+        raise ValueError("n must be > 3 for the Fisher z minimum-detectable-effect approximation")
+    z_crit = abs(_inverse_normal_cdf(1 - alpha / 2)) + abs(_inverse_normal_cdf(power))
+    return math.tanh(z_crit / math.sqrt(n - 3))
+
+
+def required_n_for_r(r: float, alpha: float = 0.05, power: float = 0.80) -> float:
+    """Inverse of ``minimum_detectable_r``: the sample size needed to detect
+    a true correlation of magnitude ``r`` at the given power/alpha."""
+    if not 0.0 < abs(r) < 1.0:
+        raise ValueError("r must be strictly between 0 and 1 in magnitude")
+    z_crit = abs(_inverse_normal_cdf(1 - alpha / 2)) + abs(_inverse_normal_cdf(power))
+    return (z_crit / math.atanh(abs(r))) ** 2 + 3
 
 
 @dataclass(frozen=True)

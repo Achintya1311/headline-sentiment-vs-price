@@ -120,6 +120,28 @@ def cumulative_by_offset(offset_returns: list[tuple[int, float]]) -> list[tuple[
     return car
 
 
+def abnormal_return_0_1(
+    bars: list[Bar], event_date: date, market_returns: dict[date, float]
+) -> float | None:
+    """Cumulative abnormal return over the [0, +1] window - the event
+    session itself plus the next trading session - or ``None`` if either
+    leg is missing (most commonly: the event session is the last date this
+    ticker's fixture has, so there is no +1 session yet, the same gap
+    ``sentiment.correlate``'s ``lagged_return`` already documents).
+
+    Day 84 (hub CRITIQUES.md R18): the pre-registered follow-up test's
+    statistic needs a market-adjusted two-session return, not the single
+    raw ``lagged_return`` ``sentiment.correlate`` reports - this is a thin
+    wrapper around the window machinery already built for the CAR chart
+    above, not new return logic.
+    """
+    offset_returns = event_window_abnormal_returns(bars, event_date, market_returns, window_before=0, window_after=1)
+    car = dict(cumulative_by_offset(offset_returns))
+    if 0 not in car or 1 not in car:
+        return None
+    return car[1]
+
+
 def split_by_magnitude(rows: list[dict], event_threshold: float) -> tuple[list[dict], list[dict]]:
     high = [r for r in rows if abs(r["compound"]) > event_threshold]
     low = [r for r in rows if abs(r["compound"]) <= event_threshold]

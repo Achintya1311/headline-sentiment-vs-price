@@ -58,3 +58,14 @@ def test_known_tickers_is_sorted_deduplicated_and_excludes_unresolved_companies(
     # LTIMindtree has no resolvable Yahoo ticker (see _RULES) - must not appear.
     assert "LTIM.NS" not in tickers
     assert "LTIMINDTREE.NS" not in tickers
+
+
+def test_known_companies_is_sorted_deduplicated_and_excludes_unresolved_companies():
+    from sentiment.tickers import known_companies
+
+    companies = known_companies()
+    assert companies == sorted(set(companies))
+    assert "Infosys" in companies
+    # LTIMindtree has no resolvable Yahoo ticker - sentiment.scrape_gdelt
+    # must never spend a query on it.
+    assert "LTIMindtree" not in companies

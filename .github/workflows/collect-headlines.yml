@@ -5,13 +5,18 @@ name: Daily headline collection
 # using the already-tested sentiment.scrape CLI - no new scraping logic
 # here, just wiring it to run without anyone starting it by hand.
 #
-# Only economic_times_markets is fetched: per README Findings, it is the
-# only one of the three registered feeds whose robots.txt allows this
-# project's user agent (moneycontrol.com's robots.txt itself 403s; Reuters'
-# feed host is unreachable from a sandbox - sentiment.scrape would mark
-# both "robots_denied"/"fetch_failed" and skip them anyway, but asking for
-# just the allowed feed keeps a run that is already a no-op from also
-# logging two permission failures every single day).
+# Only economic_times_markets is fetched via sentiment.scrape: per README
+# Findings, it is the only one of the three registered RSS feeds whose
+# robots.txt allows this project's user agent (moneycontrol.com's
+# robots.txt itself 403s; Reuters' feed host is unreachable from a sandbox
+# - sentiment.scrape would mark both "robots_denied"/"fetch_failed" and
+# skip them anyway, but asking for just the allowed feed keeps a run that
+# is already a no-op from also logging two permission failures every
+# single day).
+#
+# Day 84 (hub CRITIQUES.md R18) adds sentiment.scrape_gdelt as a second,
+# free source, queried per company rather than per static feed URL - see
+# sentiment/gdelt.py's docstring for why GDELT and not Google News RSS.
 #
 # 16:15 UTC = 21:45 IST, after the NSE close, so each run's scrape covers
 # that day's market headlines.
@@ -53,11 +58,23 @@ jobs:
         run: python -m sentiment.scrape --live --feed economic_times_markets
         continue-on-error: true
 
+      - name: Scrape GDELT for every company this project can price (best effort)
+        # Day 84 (hub CRITIQUES.md R18): a second, free, keyless source -
+        # see sentiment/gdelt.py's docstring for GDELT's own terms (free,
+        # unrestricted use with attribution) and why Google News RSS was
+        # considered and not added (its feed's own terms restrict use to a
+        # personal feed reader, which this automated public-repo pipeline
+        # is not). GDELT's own API rate-limits aggressively; one query per
+        # company, 15s+ apart (sentiment.gdelt.DEFAULT_MIN_INTERVAL_SECONDS),
+        # same best-effort/continue-on-error treatment as the ET step above.
+        run: python -m sentiment.scrape_gdelt --live
+        continue-on-error: true
+
       - name: Commit if the corpus changed
         run: |
           git config user.name "Achintya1311"
           git config user.email "67464985+Achintya1311@users.noreply.github.com"
-          git add fixtures/headlines fixtures/rss
+          git add fixtures/headlines fixtures/rss fixtures/gdelt
           if git diff --cached --quiet; then
             echo "no new headlines today (holiday, quiet news day, or a repeat of what's already committed) - nothing to commit"
             exit 0

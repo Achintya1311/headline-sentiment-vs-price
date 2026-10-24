@@ -55,6 +55,7 @@ ROW_FIELDNAMES = [
     "title",
     "company",
     "ticker",
+    "source",
     "session_date",
     "compound",
     "contemporaneous_return",
@@ -63,7 +64,7 @@ ROW_FIELDNAMES = [
 
 
 def build_rows_from_headlines(
-    headlines: list, live: bool = False
+    headlines: list, live: bool = False, score_fn=score_headline
 ) -> tuple[list[dict], list[tuple[str, str]], list[tuple[str, str]]]:
     """Same as ``build_rows`` but starting from an already-loaded list of
     ``Headline`` objects rather than a CSV path - what ``build_rows`` itself
@@ -75,7 +76,13 @@ def build_rows_from_headlines(
     whose company is known but has no resolvable ticker; ``price_errors`` is
     headlines resolved to a ticker that still could not be paired with a
     price bar (D26, hub ``CRITIQUES.md`` - previously only logged to stderr,
-    never counted by a caller)."""
+    never counted by a caller).
+
+    ``score_fn`` defaults to VADER (this function's original scorer) but
+    accepts any ``Headline -> <has .compound>`` callable - ``sentiment.prereg``
+    (Day 84, R18) passes FinBERT's ``score_headline`` instead, so the
+    pre-registered statistic is never silently scored with VADER by reusing
+    this same resolution/pairing logic."""
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
@@ -102,12 +109,13 @@ def build_rows_from_headlines(
             continue
         lagged_bar = next_session_bar(bars, alignment.session_date)
 
-        scored = score_headline(h)
+        scored = score_fn(h)
         rows.append(
             {
                 "title": h.title,
                 "company": company,
                 "ticker": ticker,
+                "source": h.source,
                 "session_date": alignment.session_date.isoformat(),
                 "compound": scored.compound,
                 "contemporaneous_return": session_bar.session_return,
@@ -123,12 +131,12 @@ def build_rows_from_headlines(
 
 
 def build_rows(
-    in_path: Path, live: bool = False
+    in_path: Path, live: bool = False, score_fn=score_headline
 ) -> tuple[list[dict], list[tuple[str, str]], list[tuple[str, str]]]:
     """Return (rows, unresolved, price_errors) - see
     ``build_rows_from_headlines`` for what each list holds."""
     headlines = read_csv(in_path)
-    return build_rows_from_headlines(headlines, live=live)
+    return build_rows_from_headlines(headlines, live=live, score_fn=score_fn)
 
 
 def write_rows_csv(rows: list[dict], path: Path) -> None:

@@ -5,6 +5,7 @@ import pytest
 from sentiment.stats import (
     bootstrap_mean_diff_ci,
     mean_absolute_error,
+    minimum_detectable_r,
     ols_fit,
     oos_r_squared,
     pearson_r,
@@ -13,6 +14,7 @@ from sentiment.stats import (
     percentile_ci,
     permutation_p_value,
     r_squared,
+    required_n_for_r,
 )
 
 
@@ -86,6 +88,50 @@ def test_bootstrap_mean_diff_ci_identical_groups_center_near_zero():
     result = bootstrap_mean_diff_ci(a, list(a), seed=7, n_boot=4000)
     assert result.diff == pytest.approx(0.0, abs=1e-9)
     assert result.ci_low < 0 < result.ci_high or math.isclose(result.ci_low, 0, abs_tol=1e-6)
+
+
+def test_minimum_detectable_r_at_n_100_matches_the_prereg_gate_rationale():
+    # docs/POWER.md and README's "Pre-registered follow-up test" section
+    # both cite this: the old 100-headline gate could only ever detect a
+    # correlation of about 0.28 or larger at 80% power.
+    assert minimum_detectable_r(100) == pytest.approx(0.277, abs=0.001)
+
+
+def test_required_n_for_r_010_matches_the_prereg_gate_rationale():
+    # r = 0.10 (a plausible small real effect) needs roughly 790 headlines -
+    # the reason Day 84 raised the data gate from 100 to 1,000.
+    assert required_n_for_r(0.10) == pytest.approx(782.65, abs=1.0)
+
+
+def test_minimum_detectable_r_and_required_n_for_r_are_inverses():
+    for n in (50, 150, 500, 2000):
+        r = minimum_detectable_r(n)
+        assert required_n_for_r(r) == pytest.approx(n, abs=0.05)
+
+
+def test_minimum_detectable_r_shrinks_as_n_grows():
+    assert minimum_detectable_r(100) > minimum_detectable_r(1000) > minimum_detectable_r(10000)
+
+
+def test_minimum_detectable_r_rejects_n_too_small_for_the_approximation():
+    with pytest.raises(ValueError):
+        minimum_detectable_r(3)
+
+
+def test_required_n_for_r_rejects_out_of_range_r():
+    with pytest.raises(ValueError):
+        required_n_for_r(0.0)
+    with pytest.raises(ValueError):
+        required_n_for_r(1.0)
+
+
+def test_power_md_table_matches_the_functions_it_cites():
+    # docs/POWER.md quotes these numbers by hand; pin them here so the doc
+    # can't silently drift from the code that is supposed to back it.
+    for n, expected in [(23, 0.556), (42, 0.421), (50, 0.387), (100, 0.277), (250, 0.176), (500, 0.125), (1000, 0.088), (2000, 0.063)]:
+        assert minimum_detectable_r(n) == pytest.approx(expected, abs=0.001)
+    for r, expected in [(0.05, 3137), (0.10, 783), (0.15, 347), (0.20, 194), (0.28, 98), (0.30, 85)]:
+        assert required_n_for_r(r) == pytest.approx(expected, abs=1.0)
 
 
 def test_ols_fit_recovers_a_known_line():

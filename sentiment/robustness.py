@@ -54,13 +54,20 @@ def _r(xs: list[float], ys: list[float]) -> float:
     return pearson_r(xs, ys)
 
 
-def session_demeaned_r(rows: list[dict]) -> float:
-    """Correlation of compound with the return minus its session's mean return."""
+def session_demeaned_r(rows: list[dict], value_key: str = "contemporaneous_return") -> float:
+    """Correlation of compound with ``value_key`` minus its session's mean.
+
+    ``value_key`` defaults to ``contemporaneous_return`` (Day 8's original
+    use). ``sentiment.prereg`` (Day 84, hub CRITIQUES.md R18) reuses this
+    same demeaning on ``abnormal_return_0_1`` instead - the market-wide-day
+    confound this function removes applies to any per-headline return
+    column, not only the raw contemporaneous one.
+    """
     by_day: dict[str, list[float]] = defaultdict(list)
     for r in rows:
-        by_day[r["session_date"]].append(r["contemporaneous_return"])
+        by_day[r["session_date"]].append(r[value_key])
     means = {d: sum(v) / len(v) for d, v in by_day.items()}
-    return _r([r["compound"] for r in rows], [r["contemporaneous_return"] - means[r["session_date"]] for r in rows])
+    return _r([r["compound"] for r in rows], [r[value_key] - means[r["session_date"]] for r in rows])
 
 
 @dataclass(frozen=True)
