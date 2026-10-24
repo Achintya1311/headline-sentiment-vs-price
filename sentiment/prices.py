@@ -99,9 +99,29 @@ def load_fixture(ticker: str) -> list[Bar]:
     return [Bar(date=date.fromisoformat(b["date"]), open=b["open"], close=b["close"]) for b in payload["bars"]]
 
 
+def merge_bars(existing: list[Bar], fetched: list[Bar]) -> list[Bar]:
+    """Union of ``existing`` and ``fetched`` by date, ``fetched`` winning on a
+    shared date, sorted ascending.
+
+    A ``--live`` fetch only ever returns Yahoo's trailing window (currently
+    about a month). Saving that straight over a fixture that already covers
+    a wider span would silently drop every bar outside the new window each
+    time ``--live`` runs again (D26, hub ``CRITIQUES.md``) - scheduling it
+    would then shrink price coverage over time instead of growing it.
+    """
+    by_date = {b.date: b for b in existing}
+    by_date.update({b.date: b for b in fetched})
+    return [by_date[d] for d in sorted(by_date)]
+
+
 def load_bars(ticker: str, live: bool = False) -> list[Bar]:
     if live:
-        bars = fetch_live(ticker)
+        fetched = fetch_live(ticker)
+        try:
+            existing = load_fixture(ticker)
+        except PriceFetchError:
+            existing = []
+        bars = merge_bars(existing, fetched)
         save_fixture(ticker, bars)
         return bars
     return load_fixture(ticker)

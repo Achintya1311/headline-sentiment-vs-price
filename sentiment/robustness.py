@@ -141,7 +141,7 @@ def run(in_path: Path, n_perm: int, seed: int) -> int:
     if not in_path.exists():
         print(f"no headlines file at {in_path}; run sentiment.scrape first", file=sys.stderr)
         return 1
-    rows, _ = build_rows(in_path)
+    rows, _, _ = build_rows(in_path)
     if len(rows) < 3:
         print("too few resolved headlines for these checks", file=sys.stderr)
         return 1

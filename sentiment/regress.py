@@ -129,7 +129,7 @@ def run(in_path: Path, out_path: Path, live: bool, train_frac: float) -> int:
         print(f"no headlines file at {in_path}; run sentiment.scrape first", file=sys.stderr)
         return 1
 
-    rows, _ = build_rows(in_path, live=live)
+    rows, _, _ = build_rows(in_path, live=live)
     rows = usable_rows(rows)
     if not rows:
         print("no headlines have a next-day return yet; nothing to regress", file=sys.stderr)

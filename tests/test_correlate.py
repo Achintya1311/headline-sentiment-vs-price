@@ -48,9 +48,10 @@ def test_build_rows_pairs_resolved_headlines_with_returns(tmp_path: Path, monkey
         in_path,
     )
 
-    rows, unresolved = build_rows(in_path)
+    rows, unresolved, price_errors = build_rows(in_path)
 
     assert unresolved == []
+    assert price_errors == []
     assert len(rows) == 1
     row = rows[0]
     assert row["ticker"] == "INFY.NS"
@@ -77,7 +78,7 @@ def test_build_rows_reports_lagged_return_none_when_next_session_missing(tmp_pat
         in_path,
     )
 
-    rows, _ = build_rows(in_path)
+    rows, _, _ = build_rows(in_path)
     assert rows[0]["lagged_return"] is None
 
 
@@ -95,11 +96,12 @@ def test_build_rows_reports_company_with_no_resolvable_ticker(tmp_path: Path, mo
         in_path,
     )
 
-    rows, unresolved = build_rows(in_path)
+    rows, unresolved, price_errors = build_rows(in_path)
     assert rows == []
     assert unresolved == [
         ("LTIMindtree Share Price Highlights: LTIMindtree Stock Price History", "LTIMindtree")
     ]
+    assert price_errors == []
 
 
 def test_run_writes_output_csv_and_succeeds(tmp_path: Path, monkeypatch):
@@ -164,6 +166,42 @@ def test_run_with_a_single_resolved_headline_does_not_crash(tmp_path: Path, monk
         assert len(list(csv.DictReader(f))) == 1
 
 
+def test_run_prints_price_error_count_in_its_summary_line(tmp_path: Path, monkeypatch, capsys):
+    # D26 (hub CRITIQUES.md): a headline resolved to a known ticker with no
+    # price bar for its session used to be dropped silently - only a
+    # per-headline stderr warning, never counted anywhere a reader would see
+    # the total. The CLI's own stdout summary must now say how many.
+    monkeypatch.setattr(prices, "FIXTURE_DIR", tmp_path)
+    import datetime as dt
+
+    # INFY.NS fixture only covers 2026-09-28, so a headline aligned to
+    # 2026-09-29 resolves to a known ticker but hits the price_errors path.
+    save_fixture("INFY.NS", [Bar(date=dt.date(2026, 9, 28), open=100.0, close=105.0)])
+    in_path = tmp_path / "raw.csv"
+    out_path = tmp_path / "correlation.csv"
+    write_csv(
+        [
+            make_headline(
+                "Infosys Share Price Highlights: Infosys Stock Price History",
+                "1",
+                datetime(2026, 9, 28, 2, 0, 0, tzinfo=timezone.utc),
+            ),
+            make_headline(
+                "Infosys Share Price Highlights: Infosys Stock Price History",
+                "2",
+                datetime(2026, 9, 28, 11, 0, 0, tzinfo=timezone.utc),
+            ),
+        ],
+        in_path,
+    )
+
+    exit_code = run(in_path, out_path, live=False, event_threshold=0.3)
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "1 headline(s) resolved to a ticker but had no price bar" in out
+
+
 def test_run_missing_input_reports_failure(tmp_path: Path):
     missing = tmp_path / "does_not_exist.csv"
     out_path = tmp_path / "correlation.csv"
@@ -198,8 +236,11 @@ def test_build_rows_from_headlines_matches_build_rows_on_the_committed_fixture()
     # - this pins the two to stay in lockstep.
     fixture = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_raw.csv"
 
-    rows_via_path, unresolved_via_path = build_rows(fixture)
-    rows_via_headlines, unresolved_via_headlines = build_rows_from_headlines(read_csv(fixture))
+    rows_via_path, unresolved_via_path, price_errors_via_path = build_rows(fixture)
+    rows_via_headlines, unresolved_via_headlines, price_errors_via_headlines = build_rows_from_headlines(
+        read_csv(fixture)
+    )
 
     assert rows_via_headlines == rows_via_path
     assert unresolved_via_headlines == unresolved_via_path
+    assert price_errors_via_headlines == price_errors_via_path

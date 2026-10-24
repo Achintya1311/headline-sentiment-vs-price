@@ -40,7 +40,7 @@ def test_run_audit_against_real_fixture_matches_correlate_and_finds_no_leak():
     control on it must not flag a leak. A small n_perm keeps this fast;
     the committed fixture's real result is this repo's live correctness
     gate, so it is checked here, not only printed by the CLI."""
-    rows, _ = build_rows(audit.DEFAULT_IN)
+    rows, _, _ = build_rows(audit.DEFAULT_IN)
     expected_r = pearson_r([r["compound"] for r in rows], [r["contemporaneous_return"] for r in rows])
 
     headlines = read_csv(audit.DEFAULT_IN)

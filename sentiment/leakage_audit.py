@@ -121,14 +121,14 @@ def compute_metrics(rows: list[dict], train_frac: float) -> RunMetrics:
 
 def run_audit(in_path: Path, trials: int, seed: int, train_frac: float, live: bool = False) -> AuditResult:
     headlines = read_csv(in_path)
-    real_rows, _ = build_rows_from_headlines(headlines, live=live)
+    real_rows, _, _ = build_rows_from_headlines(headlines, live=live)
     real = compute_metrics(real_rows, train_frac)
 
     null: list[RunMetrics] = []
     skipped_r2 = 0
     for trial in range(trials):
         shuffled = shuffle_timestamps(headlines, seed=seed + trial)
-        rows, _ = build_rows_from_headlines(shuffled, live=live)
+        rows, _, _ = build_rows_from_headlines(shuffled, live=live)
         metrics = compute_metrics(rows, train_frac)
         null.append(metrics)
         if metrics.test_r2 is None:

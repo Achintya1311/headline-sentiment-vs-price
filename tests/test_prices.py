@@ -153,3 +153,37 @@ def test_load_bars_live_fetches_and_saves_fixture(tmp_path: Path, monkeypatch):
     bars = load_bars("LIVE.NS", live=True)
     assert bars[0].open == 5.0
     assert load_fixture("LIVE.NS") == bars
+
+
+def test_load_bars_live_merges_with_existing_fixture_instead_of_overwriting(tmp_path: Path, monkeypatch):
+    # D26 (hub CRITIQUES.md): Yahoo's chart endpoint only ever returns a
+    # trailing window (currently ~1mo). Scheduling --live on a cadence means
+    # every refetch, taken alone, excludes dates outside that window - a
+    # fixture that already covers a wider span (like this repo's committed
+    # Aug 31-Sep 29 snapshot) must not lose those older bars just because a
+    # later --live run didn't happen to refetch them.
+    monkeypatch.setattr(prices, "FIXTURE_DIR", tmp_path)
+    save_fixture("MERGE.NS", [Bar(date=date(2026, 8, 31), open=1.0, close=2.0)])
+
+    # 1790000000 -> 2026-09-21, outside the committed bar's date and not
+    # adjacent to it, so a plain overwrite would lose the older bar entirely.
+    payload = _chart_payload("MERGE.NS", [(1790000000, 5.0, 6.0)])
+    monkeypatch.setattr(prices.json, "load", lambda resp: payload)
+    monkeypatch.setattr(prices.urllib.request, "urlopen", lambda *a, **k: _FakeResponse(payload))
+
+    bars = load_bars("MERGE.NS", live=True)
+
+    assert {b.date for b in bars} == {date(2026, 8, 31), date(2026, 9, 21)}
+    assert load_fixture("MERGE.NS") == bars
+
+
+def test_merge_bars_prefers_the_freshly_fetched_value_on_a_shared_date():
+    old = [Bar(date=date(2026, 9, 28), open=1.0, close=2.0)]
+    new = [Bar(date=date(2026, 9, 28), open=1.5, close=2.5)]
+    assert prices.merge_bars(old, new) == new
+
+
+def test_merge_bars_unions_and_sorts_ascending_by_date():
+    old = [Bar(date=date(2026, 9, 1), open=1.0, close=1.0)]
+    new = [Bar(date=date(2026, 8, 31), open=2.0, close=2.0)]
+    assert [b.date for b in prices.merge_bars(old, new)] == [date(2026, 8, 31), date(2026, 9, 1)]

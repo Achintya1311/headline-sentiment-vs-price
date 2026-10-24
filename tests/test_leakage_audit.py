@@ -95,18 +95,22 @@ def test_percentile_rank_counts_at_or_above():
     assert percentile_rank(-10.0, [0.1, 0.2]) == 1.0
 
 
-def test_run_audit_against_the_real_fixture_matches_the_documented_degenerate_case():
-    # Same honest finding Day 5/6 already recorded: the real run's lagged
-    # correlation and out-of-sample R^2 are both exactly 0.0, because every
-    # usable headline shares one VADER score. The audit must reproduce that,
-    # not a different number, since it reruns the identical Day 5/6 pipeline
-    # on the unshuffled headlines before it ever shuffles anything.
+def test_run_audit_against_the_real_fixture_matches_the_current_regress_result():
+    # D26 (hub CRITIQUES.md): this fixture's lagged correlation and
+    # out-of-sample R^2 used to be exactly 0.0, because fixtures/prices/ was
+    # frozen at a window that gave only 15 of the 23 resolved headlines a
+    # next-day return, and all 15 happened to share one VADER score. Once
+    # price coverage grew past that window (Day 77 fix-phase), all 23 get a
+    # next-day return and the predictor has real variance - the audit must
+    # reproduce sentiment.regress's own current numbers, not the old
+    # degenerate ones, since it reruns the identical Day 5/6 pipeline on the
+    # unshuffled headlines before it ever shuffles anything.
     result = run_audit(FIXTURE, trials=200, seed=0, train_frac=0.7)
 
     assert result.real.n_resolved == 23
-    assert result.real.n_lagged == 15
-    assert result.real.lagged_r == pytest.approx(0.0, abs=1e-9)
-    assert result.real.test_r2 == pytest.approx(0.0, abs=1e-9)
+    assert result.real.n_lagged == 23
+    assert result.real.lagged_r == pytest.approx(-0.278, abs=1e-3)
+    assert result.real.test_r2 == pytest.approx(-6.006, abs=1e-3)
     assert len(result.null) == 200
 
 
@@ -119,8 +123,18 @@ def test_leakage_gate_the_real_result_is_not_an_outlier_against_its_shuffled_nul
     reassignment of the same timestamps can't replicate, which is exactly
     what 'the pipeline is leaking' would look like. This runs in CI on every
     test run, not once by hand, per NEXT_STEPS.md's own requirement.
+
+    D26 (hub CRITIQUES.md): now that price coverage has grown past this
+    fixture's old degenerate zero-variance case, its real test_r2 sits close
+    enough to the 97.5% edge that 200 null trials alone is too coarse an
+    estimate of that percentile to judge it reliably - at seed 0 it reads
+    98.5% with 200 trials but 97.4% with 2000 (checked directly: not a
+    different real value, just a more precise null). 2000 trials, matching
+    this project's other permutation tests (`sentiment.audit`'s own
+    `--n-perm` default order of magnitude), removes that Monte Carlo noise
+    rather than loosening the 95% threshold itself.
     """
-    result = run_audit(FIXTURE, trials=200, seed=0, train_frac=0.7)
+    result = run_audit(FIXTURE, trials=2000, seed=0, train_frac=0.7)
     real, null = result.real, result.null
 
     r2_null = [m.test_r2 for m in null if m.test_r2 is not None]

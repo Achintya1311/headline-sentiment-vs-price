@@ -142,10 +142,15 @@ def test_run_reports_failure_rather_than_crashing_when_too_few_usable_rows(tmp_p
     assert not out_path.exists()
 
 
-def test_run_against_committed_fixture_matches_the_documented_degenerate_case(tmp_path: Path):
-    # The real, honest Day 6 finding (see README): all 15 headlines with a
-    # next-day return share the identical VADER compound score, so the fit
-    # is mechanically valid but has nothing to explain, in train or test.
+def test_run_against_committed_fixture_matches_the_current_price_coverage(tmp_path: Path):
+    # D26 (hub CRITIQUES.md): this used to be the documented degenerate
+    # case - only 15 of the 23 resolved headlines had a next-day return,
+    # because fixtures/prices/ was frozen at a window that left Tuesday-
+    # aligned headlines' next session (Wednesday) untraded, and all 15 of
+    # those happened to share one VADER score. Once price coverage grew
+    # past that window (Day 77 fix-phase), all 23 resolved headlines get a
+    # next-day return and the predictor has real variance - see the
+    # README's "Day 77 fix-phase (D26) update" under Day 6 Findings.
     # Pinned to the frozen 50-row regression snapshot, not the live
     # headlines_raw.csv the daily scrape workflow keeps appending to -
     # otherwise these counts drift every time that workflow commits (D10).
@@ -157,6 +162,6 @@ def test_run_against_committed_fixture_matches_the_documented_degenerate_case(tm
     assert exit_code == 0
     with out_path.open(newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
-    assert len(rows) == 15
-    assert sum(1 for r in rows if r["split"] == "train") == 10
-    assert sum(1 for r in rows if r["split"] == "test") == 5
+    assert len(rows) == 23
+    assert sum(1 for r in rows if r["split"] == "train") == 16
+    assert sum(1 for r in rows if r["split"] == "test") == 7

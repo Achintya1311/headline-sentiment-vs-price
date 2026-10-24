@@ -62,12 +62,20 @@ ROW_FIELDNAMES = [
 ]
 
 
-def build_rows_from_headlines(headlines: list, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
+def build_rows_from_headlines(
+    headlines: list, live: bool = False
+) -> tuple[list[dict], list[tuple[str, str]], list[tuple[str, str]]]:
     """Same as ``build_rows`` but starting from an already-loaded list of
     ``Headline`` objects rather than a CSV path - what ``build_rows`` itself
     uses, and what Day 8's leakage audit needs to rerun this pipeline against
     headlines whose timestamps it has shuffled in memory, without writing a
-    scratch CSV just to read it back."""
+    scratch CSV just to read it back.
+
+    Returns ``(rows, unresolved, price_errors)``: ``unresolved`` is headlines
+    whose company is known but has no resolvable ticker; ``price_errors`` is
+    headlines resolved to a ticker that still could not be paired with a
+    price bar (D26, hub ``CRITIQUES.md`` - previously only logged to stderr,
+    never counted by a caller)."""
     rows: list[dict] = []
     unresolved: list[tuple[str, str]] = []
     price_errors: list[tuple[str, str]] = []
@@ -111,13 +119,14 @@ def build_rows_from_headlines(headlines: list, live: bool = False) -> tuple[list
         for ticker, msg in price_errors:
             print(f"warning: {ticker}: {msg}", file=sys.stderr)
 
-    return rows, unresolved
+    return rows, unresolved, price_errors
 
 
-def build_rows(in_path: Path, live: bool = False) -> tuple[list[dict], list[tuple[str, str]]]:
-    """Return (rows, unresolved) where ``unresolved`` is [(title, company), ...]
-    for headlines whose company was recognised but whose ticker could not be
-    fetched (see ``sentiment.tickers``)."""
+def build_rows(
+    in_path: Path, live: bool = False
+) -> tuple[list[dict], list[tuple[str, str]], list[tuple[str, str]]]:
+    """Return (rows, unresolved, price_errors) - see
+    ``build_rows_from_headlines`` for what each list holds."""
     headlines = read_csv(in_path)
     return build_rows_from_headlines(headlines, live=live)
 
@@ -136,7 +145,7 @@ def run(in_path: Path, out_path: Path, live: bool, event_threshold: float) -> in
         print(f"no headlines file at {in_path}; run sentiment.scrape first", file=sys.stderr)
         return 1
 
-    rows, unresolved = build_rows(in_path, live=live)
+    rows, unresolved, price_errors = build_rows(in_path, live=live)
     if not rows:
         print("no headlines resolved to a fetchable ticker; nothing to correlate", file=sys.stderr)
         return 1
@@ -151,6 +160,11 @@ def run(in_path: Path, out_path: Path, live: bool, event_threshold: float) -> in
     if unresolved:
         names = ", ".join(f"{c} ({t[:40]}...)" for t, c in unresolved)
         print(f"{len(unresolved)} headline(s) named a company with no resolvable ticker: {names}")
+    if price_errors:
+        print(
+            f"{len(price_errors)} headline(s) resolved to a ticker but had no price bar for their "
+            f"session and were dropped (see warnings above)"
+        )
 
     if len(rows) >= 2:
         contemp_stat = pearson_with_ci(compounds, contemporaneous)

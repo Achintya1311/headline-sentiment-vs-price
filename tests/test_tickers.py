@@ -46,3 +46,15 @@ def test_resolves_all_and_only_the_expected_headlines_in_the_committed_fixture()
     assert len(resolved) == 24
     with_ticker = [h.title for h in headlines if (m := resolve(h.title)) is not None and m[1] is not None]
     assert len(with_ticker) == 23
+
+
+def test_known_tickers_is_sorted_deduplicated_and_excludes_unresolved_companies():
+    from sentiment.tickers import known_tickers
+
+    tickers = known_tickers()
+    assert tickers == sorted(set(tickers))
+    assert None not in tickers
+    assert "INFY.NS" in tickers
+    # LTIMindtree has no resolvable Yahoo ticker (see _RULES) - must not appear.
+    assert "LTIM.NS" not in tickers
+    assert "LTIMINDTREE.NS" not in tickers

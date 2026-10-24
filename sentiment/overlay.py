@@ -224,7 +224,7 @@ def run(
         print(f"no headlines file at {in_path}; run sentiment.scrape first", file=sys.stderr)
         return 1
 
-    rows, _ = build_rows(in_path, live=live)
+    rows, _, _ = build_rows(in_path, live=live)
     if not rows:
         print("no headlines resolved to a fetchable ticker; nothing to chart", file=sys.stderr)
         return 1
