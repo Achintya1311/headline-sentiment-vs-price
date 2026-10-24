@@ -166,6 +166,14 @@ def bootstrap_mean_diff_ci(
     on every run. With the small samples this project actually has, this
     interval is expected to be wide - that width is the honest result, not a
     bug to hide.
+
+    For a group this small, ``n_boot=5000`` is more resamples than the group
+    has mathematically distinct outcomes: resampling n elements with
+    replacement has only C(2n-1, n) distinct possible means (10 for n=3, 35
+    for n=4), so most of those 5000 draws just repeat one of a handful of
+    values rather than adding real percentile resolution. The returned CI is
+    still correct (every draw is a valid resample), but its apparent
+    precision overstates what a group this size can actually resolve.
     """
     if not group_a or not group_b:
         raise ValueError("both groups need at least one observation")
