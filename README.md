@@ -6,7 +6,8 @@ Educational research on historical data. Not investment advice. Not a SEBI-regis
 **Method:** align each headline to the first trading session its own publish time permits, score it with VADER, and correlate against contemporaneous and lagged open-to-close return (Fisher-z 95% CI), with a shuffled-timestamp permutation audit as the correctness gate.
 **Finding (Day 5, null result):** contemporaneous r = -0.185, 95% CI [-0.555, +0.246], n=23 — a CI that comfortably contains zero. Low resolution too: 17 of 23 headlines saturate at the same VADER score, leaving little independent variation to explain. See Findings and "Why this null result might be spurious anyway" below.
 **Chart:** `outputs/sentiment_price_overlay.png` — cumulative return for the 3 high-magnitude headlines, with the aligned session marked.
-**Reproduce:** `python -m sentiment.correlate`
+**Reproduce:** `python -m sentiment.correlate --in fixtures/headlines/headlines_regression_50.csv` (the frozen 50-headline corpus; prints r=-0.185, n=23 exactly)
+**Grown corpus (rerun 26 Oct 2026):** `python -m sentiment.correlate` on the daily-growing `headlines_raw.csv` (382 headlines) gives contemporaneous r = -0.228, 95% CI [-0.497, +0.082], n=42; lagged r = -0.127, n=41. Both CIs still contain zero. See the Day 77 update under Findings.
 
 Scores financial headlines and tests them against subsequent returns, with a leakage control that has to fail before any result is believed.
 
