@@ -33,6 +33,7 @@ Every source is free. Nothing in this project requires a paid tier, a subscripti
 - Public RSS feeds (Moneycontrol, Economic Times, Reuters) - scraped politely, robots.txt respected. As of Day 1, only Economic Times is actually reachable and permitted; see Findings. `.github/workflows/collect-headlines.yml` now re-scrapes it daily and commits whatever is genuinely new, so the corpus is no longer frozen at Day 1's one-time snapshot.
 - GDELT Project DOC API (Day 84, hub `CRITIQUES.md` R18) - free, keyless, unrestricted use with attribution per its own terms; one query per company this project can already price, run the same way the RSS feed is. See Limitations for why Google News RSS was checked and not added.
 - yfinance - price history
+- Headline text in `fixtures/` is third-party, kept exactly as published so its tone can be measured; any rating, target or buy/sell wording in it is the publisher's, not this project's. See [fixtures/README.md](fixtures/README.md).
 - VADER (nltk) and FinBERT (HuggingFace, local CPU) - both free
 
 ## How to run
