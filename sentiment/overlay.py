@@ -48,6 +48,7 @@ import matplotlib.pyplot as plt
 from sentiment.correlate import DEFAULT_EVENT_THRESHOLD, DEFAULT_IN, build_rows
 from sentiment.market import equal_weighted_daily_returns, load_universe_bars
 from sentiment.prices import Bar, load_bars
+from sentiment import DISCLAIMER
 
 OUT_DIR = Path(__file__).resolve().parent.parent / "outputs"
 OVERLAY_OUT = OUT_DIR / "sentiment_price_overlay.png"
@@ -297,6 +298,7 @@ def main() -> None:
     parser.add_argument("--window-before", type=int, default=DEFAULT_WINDOW_BEFORE, help="trading days before the event to include")
     parser.add_argument("--window-after", type=int, default=DEFAULT_WINDOW_AFTER, help="trading days after the event to include")
     args = parser.parse_args()
+    print(DISCLAIMER)
     sys.exit(run(args.in_path, args.out_dir, args.live, args.event_threshold, args.window_before, args.window_after))
 
 

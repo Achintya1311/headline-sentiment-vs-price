@@ -40,6 +40,7 @@ from sentiment.correlate import DEFAULT_IN
 from sentiment.headline import Headline, read_csv
 from sentiment.market_hours import align_headline
 from sentiment.tickers import resolve
+from sentiment import DISCLAIMER
 
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "outputs" / "sentiment_contract.json"
 DEFAULT_WINDOW_DAYS = 7
@@ -186,6 +187,7 @@ def main() -> None:
     parser.add_argument("--window-days", type=int, default=DEFAULT_WINDOW_DAYS, help="trailing window size in calendar days")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="contract JSON to write")
     args = parser.parse_args()
+    print(DISCLAIMER)
     sys.exit(run(args.in_path, args.ticker, args.model, args.as_of, args.window_days, args.out))
 
 

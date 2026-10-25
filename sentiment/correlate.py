@@ -42,6 +42,7 @@ from sentiment.prices import PriceFetchError, bar_on, load_bars, next_session_ba
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
 from sentiment.tickers import resolve
 from sentiment.vader_score import score_headline
+from sentiment import DISCLAIMER
 
 DEFAULT_IN = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_raw.csv"
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "outputs" / "correlation.csv"
@@ -222,6 +223,7 @@ def main() -> None:
         help="|compound| above this is 'high-magnitude' for the event study",
     )
     args = parser.parse_args()
+    print(DISCLAIMER)
     sys.exit(run(args.in_path, args.out_path, args.live, args.event_threshold))
 
 

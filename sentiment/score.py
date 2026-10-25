@@ -18,6 +18,7 @@ from pathlib import Path
 
 from sentiment.headline import read_csv
 from sentiment.vader_score import score_headlines, write_scored_csv
+from sentiment import DISCLAIMER
 
 DEFAULT_IN = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_raw.csv"
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "outputs" / "headlines_scored.csv"
@@ -51,6 +52,7 @@ def main() -> None:
     parser.add_argument("--in", dest="in_path", type=Path, default=DEFAULT_IN, help="headlines CSV to score")
     parser.add_argument("--out", dest="out_path", type=Path, default=DEFAULT_OUT, help="scored CSV to write")
     args = parser.parse_args()
+    print(DISCLAIMER)
     sys.exit(run(args.in_path, args.out_path))
 
 

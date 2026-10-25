@@ -32,6 +32,7 @@ from pathlib import Path
 from sentiment.correlate import DEFAULT_IN, build_rows
 from sentiment.headline import Headline, read_csv
 from sentiment.stats import pearson_r, pearson_with_ci
+from sentiment import DISCLAIMER
 
 # A move verb plus a percentage: "shares rise 4%", "rallies 89%", "fall 2%".
 # "sees 41% upside" has no move verb, so a forecast is not flagged.
@@ -177,6 +178,7 @@ def main() -> None:
     p.add_argument("--n-perm", type=int, default=2000)
     p.add_argument("--seed", type=int, default=0)
     a = p.parse_args()
+    print(DISCLAIMER)
     raise SystemExit(run(a.in_path, a.n_perm, a.seed))
 
 

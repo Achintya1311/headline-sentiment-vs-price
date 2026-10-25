@@ -44,6 +44,7 @@ from sentiment.prices import Bar, PriceFetchError, bar_on, load_bars
 from sentiment.stats import pearson_r, permutation_p_value
 from sentiment.tickers import resolve
 from sentiment.vader_score import score_headline
+from sentiment import DISCLAIMER
 
 DEFAULT_IN = Path(__file__).resolve().parent.parent / "fixtures" / "headlines" / "headlines_raw.csv"
 DEFAULT_N_PERM = 2000
@@ -187,6 +188,7 @@ def main() -> None:
     parser.add_argument("--n-perm", type=int, default=DEFAULT_N_PERM, help="number of timestamp permutations")
     parser.add_argument("--seed", type=int, default=0, help="RNG seed, for a reproducible report")
     args = parser.parse_args()
+    print(DISCLAIMER)
     sys.exit(run(args.in_path, args.live, args.n_perm, args.seed))
 
 

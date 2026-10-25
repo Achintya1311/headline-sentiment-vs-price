@@ -40,6 +40,7 @@ from sentiment.correlate import DEFAULT_IN, build_rows_from_headlines
 from sentiment.headline import Headline, read_csv
 from sentiment.regress import DEFAULT_TRAIN_FRAC, fit_and_evaluate, time_split, usable_rows
 from sentiment.stats import pearson_with_ci
+from sentiment import DISCLAIMER
 
 DEFAULT_TRIALS = 500
 DEFAULT_SEED = 0
@@ -203,6 +204,7 @@ def main() -> None:
     parser.add_argument("--train-frac", type=float, default=DEFAULT_TRAIN_FRAC, help="same meaning as sentiment.regress")
     parser.add_argument("--live", action="store_true", help="re-fetch prices instead of reading fixtures")
     args = parser.parse_args()
+    print(DISCLAIMER)
     sys.exit(run(args.in_path, args.trials, args.seed, args.train_frac, args.live))
 
 

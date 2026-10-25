@@ -36,6 +36,7 @@ from pathlib import Path
 
 from sentiment.correlate import DEFAULT_IN, build_rows
 from sentiment.stats import mean_absolute_error, ols_fit, oos_r_squared, r_squared
+from sentiment import DISCLAIMER
 
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "outputs" / "regression.csv"
 DEFAULT_TRAIN_FRAC = 0.7
@@ -173,6 +174,7 @@ def main() -> None:
         help="fraction of the (time-ordered) usable headlines to train on; the rest is the held-out test split",
     )
     args = parser.parse_args()
+    print(DISCLAIMER)
     sys.exit(run(args.in_path, args.out_path, args.live, args.train_frac))
 
 
