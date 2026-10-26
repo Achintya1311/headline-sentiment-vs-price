@@ -11,7 +11,7 @@ Educational research on historical data. Not investment advice. Not a SEBI-regis
 
 Scores financial headlines and tests them against subsequent returns, with a leakage control that has to fail before any result is believed.
 
-**Status:** Complete (Oct 2026), corpus growth now automated. Two GitHub Actions workflows (`.github/workflows/collect-headlines.yml`, daily; `finbert-sentiment-contract.yml`, weekly) keep growing the headline corpus and regenerating a real FinBERT-scored contract for INFY.NS - see Findings and Limitations for what each has shipped so far versus what only takes effect once they have actually run. Part of a nine-repo equity research pipeline; [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
+**Status:** Complete (Oct 2026), corpus growth now automated. Two GitHub Actions workflows (`.github/workflows/collect-headlines.yml`, daily; `finbert-sentiment-contract.yml`, weekly) keep growing the headline corpus and regenerating a real FinBERT-scored contract for INFY.NS - see Findings and Limitations for what each has shipped so far versus what only takes effect once they have actually run. Part of an eight-repo equity research pipeline (STOCKSTALKER plus seven research repos; the separate stockstalker-lab is not counted); [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
 
 *Educational research on historical data. Not investment advice. Not a SEBI-registered research analyst.*
 
@@ -272,7 +272,7 @@ Days 5-8 ran several related tests on one small sample, so a further pass over t
 
 ## Where this sits
 
-Part of a nine-repo research pipeline. Stock Stalker screens the NSE universe; this repo publishes a versioned artifact it reads back. Real output of `python -m sentiment.contract --ticker INFY.NS` against the current committed corpus:
+Part of an eight-repo research pipeline. Stock Stalker screens the NSE universe; this repo publishes a versioned artifact it reads back. Real output of `python -m sentiment.contract --ticker INFY.NS` against the current committed corpus:
 
 ```json
 {
