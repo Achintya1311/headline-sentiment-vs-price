@@ -44,9 +44,9 @@ jobs:
           cache: pip
 
       - name: Install
-        # Scraping needs none of requirements.txt's heavier deps (torch,
-        # transformers, matplotlib) - just the feed parser's own.
-        run: pip install requests beautifulsoup4 lxml
+        # The README install (P86), so the test step below can run the suite.
+        # No torch: the FinBERT tests skip without it (P87), and ci.yml runs them.
+        run: pip install -r requirements.txt -e .
 
       - name: Scrape Economic Times markets RSS (best effort)
         # A market holiday or a transient fetch error is not a failure:
@@ -69,6 +69,12 @@ jobs:
         # same best-effort/continue-on-error treatment as the ET step above.
         run: python -m sentiment.scrape_gdelt --live
         continue-on-error: true
+
+      - name: Test before committing
+        # P88 (hub CRITIQUES.md): the GITHUB_TOKEN push below triggers no
+        # ci.yml run, so a data change that broke a test would otherwise sit
+        # on main unseen. The FinBERT tests skip here (no torch).
+        run: pytest -q
 
       - name: Commit if the corpus changed
         run: |

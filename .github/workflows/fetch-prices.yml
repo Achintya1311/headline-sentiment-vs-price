@@ -46,10 +46,9 @@ jobs:
           cache: pip
 
       - name: Install
-        # sentiment.prices/fetch_prices only need the stdlib plus the
-        # package itself - none of requirements.txt's heavier deps (torch,
-        # transformers, matplotlib) are on this path.
-        run: pip install -e . --no-deps
+        # The README install (P86), so the test step below can run the suite.
+        # No torch: the FinBERT tests skip without it (P87), and ci.yml runs them.
+        run: pip install -r requirements.txt -e .
 
       - name: Refresh every known ticker's price fixture (best effort)
         # A transient Yahoo fetch error for one ticker is not a workflow
@@ -57,6 +56,12 @@ jobs:
         # to the rest. The commit step below is the real pass/fail signal.
         run: python -m sentiment.fetch_prices
         continue-on-error: true
+
+      - name: Test before committing
+        # P88 (hub CRITIQUES.md): the GITHUB_TOKEN push below triggers no
+        # ci.yml run, so a data change that broke a test would otherwise sit
+        # on main unseen. The FinBERT tests skip here (no torch).
+        run: pytest -q
 
       - name: Commit if any fixture changed
         run: |

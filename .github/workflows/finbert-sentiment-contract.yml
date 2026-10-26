@@ -35,7 +35,7 @@ jobs:
 
       - name: Install (incl. CPU-only torch)
         run: |
-          pip install -r requirements.txt
+          pip install -r requirements.txt -e .
           # Same CPU-only wheel as ci.yml - far smaller than the default
           # PyPI build, which drags in unneeded CUDA libraries.
           pip install torch --index-url https://download.pytorch.org/whl/cpu
@@ -53,6 +53,12 @@ jobs:
         # day" section) - same ticker, now with model=finbert instead of
         # the vader fallback.
         run: python -m sentiment.contract --ticker INFY.NS --model finbert --out fixtures/sentiment/INFY.json
+
+      - name: Test before committing
+        # P88 (hub CRITIQUES.md): the GITHUB_TOKEN push below triggers no
+        # ci.yml run, so a data change that broke a test would otherwise sit
+        # on main unseen. torch is installed, so the FinBERT tests run too.
+        run: pytest -q
 
       - name: Commit if the contract changed
         run: |
