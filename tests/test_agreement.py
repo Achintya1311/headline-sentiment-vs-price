@@ -1,5 +1,8 @@
+import importlib.util
 from datetime import datetime, timezone
 from pathlib import Path
+
+import pytest
 
 from sentiment.agreement import (
     DEFAULT_EVAL_SET,
@@ -11,6 +14,11 @@ from sentiment.agreement import (
 )
 from sentiment.headline import Headline
 from sentiment.evaluate import load_eval_set
+
+requires_torch = pytest.mark.skipif(
+    importlib.util.find_spec("torch") is None,
+    reason="FinBERT needs torch, an optional CPU-only wheel (README How to run); CI installs it (P87)",
+)
 
 
 def make_headline(title: str, link: str) -> Headline:
@@ -24,6 +32,7 @@ def make_headline(title: str, link: str) -> Headline:
     )
 
 
+@requires_torch
 def test_corpus_agreement_counts_matches_and_mismatches():
     headlines = [
         make_headline("Stock soars after strong quarterly results", "1"),  # both positive
@@ -41,6 +50,7 @@ def test_corpus_agreement_counts_matches_and_mismatches():
     assert sum(result["confusion"].values()) == 2
 
 
+@requires_torch
 def test_eval_set_comparison_shows_finbert_closing_the_finance_jargon_gap():
     rows = [
         {"id": "1", "text": "Company beats earnings estimates, raises full-year guidance",
@@ -61,6 +71,7 @@ def test_eval_set_comparison_shows_finbert_closing_the_finance_jargon_gap():
     assert result["by_category"]["finance_jargon"]["finbert_accuracy"] == 1.0
 
 
+@requires_torch
 def test_render_report_includes_both_sections():
     headlines = [make_headline("Stock soars after strong quarterly results", "1")]
     corpus = corpus_agreement(headlines)
@@ -77,6 +88,7 @@ def test_render_report_includes_both_sections():
     assert "finance_jargon" in report
 
 
+@requires_torch
 def test_run_writes_report_and_returns_zero(tmp_path: Path):
     out = tmp_path / "report.txt"
 

@@ -1,9 +1,17 @@
+import importlib.util
 from datetime import datetime, timezone
 from pathlib import Path
+
+import pytest
 
 from sentiment.headline import Headline, write_csv
 from sentiment.finbert import run
 from sentiment.finbert_score import read_scored_csv
+
+requires_torch = pytest.mark.skipif(
+    importlib.util.find_spec("torch") is None,
+    reason="FinBERT needs torch, an optional CPU-only wheel (README How to run); CI installs it (P87)",
+)
 
 
 def make_headline(title: str, link: str) -> Headline:
@@ -17,6 +25,7 @@ def make_headline(title: str, link: str) -> Headline:
     )
 
 
+@requires_torch
 def test_run_scores_every_headline_in_the_input_csv(tmp_path: Path):
     in_path = tmp_path / "raw.csv"
     out_path = tmp_path / "scored.csv"
@@ -44,6 +53,7 @@ def test_run_missing_input_reports_failure(tmp_path: Path):
     assert not out_path.exists()
 
 
+@requires_torch
 def test_run_against_committed_fixture_scores_all_fifty(tmp_path: Path):
     # pinned to the frozen 50-row regression snapshot, not the live
     # headlines_raw.csv the daily scrape workflow keeps appending to -

@@ -1,5 +1,8 @@
+import importlib.util
 from datetime import datetime, timezone
 from pathlib import Path
+
+import pytest
 
 from sentiment.headline import Headline
 from sentiment.finbert_score import (
@@ -10,6 +13,11 @@ from sentiment.finbert_score import (
     score_text,
     score_texts,
     write_scored_csv,
+)
+
+requires_torch = pytest.mark.skipif(
+    importlib.util.find_spec("torch") is None,
+    reason="FinBERT needs torch, an optional CPU-only wheel (README How to run); CI installs it (P87)",
 )
 
 
@@ -24,17 +32,20 @@ def make_headline(title: str, link: str = "https://example.com/1") -> Headline:
     )
 
 
+@requires_torch
 def test_score_text_returns_three_probabilities_summing_to_one():
     scores = score_text("Company posts record profit as sales surge")
     assert set(scores) == {"positive", "negative", "neutral"}
     assert abs(sum(scores.values()) - 1.0) < 1e-4
 
 
+@requires_torch
 def test_clearly_positive_and_negative_headlines_get_the_expected_label():
     assert label_for_scores(score_text("Stock soars after strong quarterly results")) == "positive"
     assert label_for_scores(score_text("CEO resigns amid accounting scandal")) == "negative"
 
 
+@requires_torch
 def test_finance_jargon_that_defeats_vader_is_correctly_read_by_finbert():
     # The exact two headlines Day 2's evaluation harness recorded as VADER
     # failures (see sentiment/vader_score.py and README Findings) - this is
@@ -46,6 +57,7 @@ def test_finance_jargon_that_defeats_vader_is_correctly_read_by_finbert():
     assert label_for_scores(safety_recall) == "negative"
 
 
+@requires_torch
 def test_score_texts_batches_and_preserves_order():
     texts = ["Stock soars after strong quarterly results", "CEO resigns amid accounting scandal"]
     results = score_texts(texts)
@@ -58,6 +70,7 @@ def test_score_texts_empty_list_returns_empty_list():
     assert score_texts([]) == []
 
 
+@requires_torch
 def test_score_headline_wraps_the_source_headline_fields():
     h = make_headline("Stock soars after strong quarterly results")
     scored = score_headline(h)
@@ -68,6 +81,7 @@ def test_score_headline_wraps_the_source_headline_fields():
     assert scored.compound == scored.positive - scored.negative
 
 
+@requires_torch
 def test_score_headlines_preserves_order():
     headlines = [make_headline("Stock soars", link="1"), make_headline("Stock plunges", link="2")]
     scored = score_headlines(headlines)
@@ -78,6 +92,7 @@ def test_score_headlines_empty_list_returns_empty_list():
     assert score_headlines([]) == []
 
 
+@requires_torch
 def test_scored_csv_round_trip(tmp_path: Path):
     headlines = [
         make_headline("Stock soars after strong quarterly results", link="1"),

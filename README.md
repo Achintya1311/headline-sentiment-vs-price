@@ -41,7 +41,8 @@ Every source is free. Nothing in this project requires a paid tier, a subscripti
 
 ```bash
 uv venv && source .venv/bin/activate
-uv pip install -r requirements.txt
+uv pip install -r requirements.txt -e .   # -e . so bare `pytest` can import `sentiment` (P86)
+pytest                                    # the 13 FinBERT tests skip unless torch is installed (Day 3 below); CI installs it
 
 # Day 1: scrape headlines. Offline by default - reads the committed
 # fixtures/rss/*.xml snapshots, so nothing blocks on network access.
