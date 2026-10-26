@@ -7,7 +7,7 @@ Educational research on historical data. Not investment advice. Not a SEBI-regis
 **Finding (Day 5, null result):** contemporaneous r = -0.185, 95% CI [-0.555, +0.246], n=23 — a CI that comfortably contains zero. Low resolution too: 17 of 23 headlines saturate at the same VADER score, leaving little independent variation to explain. See Findings and "Why this null result might be spurious anyway" below.
 **Chart:** `outputs/sentiment_price_overlay.png` — cumulative return for the 3 high-magnitude headlines, with the aligned session marked.
 **Reproduce:** `python -m sentiment.correlate --in fixtures/headlines/headlines_regression_50.csv` (the frozen 50-headline corpus; prints r=-0.185, n=23 exactly)
-**Grown corpus (rerun 26 Oct 2026):** `python -m sentiment.correlate` on the daily-growing `headlines_raw.csv` (382 headlines) gives contemporaneous r = -0.228, 95% CI [-0.497, +0.082], n=42; lagged r = -0.127, n=41. Both CIs still contain zero. See the Day 77 update under Findings.
+**Grown corpus (rerun 26 Oct 2026, at `096b872`):** `python -m sentiment.correlate` on the daily-growing `headlines_raw.csv` (432 headlines at that commit) gives contemporaneous r = -0.224, 95% CI [-0.483, +0.071], n=46; lagged r = -0.126, n=42. Both CIs still contain zero. The collector adds headlines every day, so later commits give other numbers; `git checkout 096b872` reproduces these. See the Day 77 update under Findings.
 
 Scores financial headlines and tests them against subsequent returns, with a leakage control that has to fail before any result is believed.
 
