@@ -9,6 +9,7 @@ import csv
 import io
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -39,3 +40,27 @@ def test_count_matches_the_named_commit():
     if shown.returncode:
         pytest.skip(f"{sha.group(1)} not in this (shallow) checkout")
     assert sum(1 for _ in csv.DictReader(io.StringIO(shown.stdout))) == int(count.group(1))
+
+
+def test_line_reports_every_interval_the_rerun_printed():
+    # P109: the line said "both CIs still contain zero" and left out the
+    # same rerun's event-study interval, which does not. Rerun correlate on
+    # the named commit's corpus and require all three intervals in the line.
+    line = _grown_line()
+    sha = re.search(r"at `([0-9a-f]{7,40})`", line).group(1)
+    shown = subprocess.run(["git", "show", f"{sha}:{CORPUS}"], cwd=ROOT, capture_output=True, text=True)
+    if shown.returncode:
+        pytest.skip(f"{sha} not in this (shallow) checkout")
+    tmp = ROOT / "outputs" / f"_readme_check_{sha}.csv"
+    tmp.parent.mkdir(exist_ok=True)
+    tmp.write_text(shown.stdout)
+    try:
+        out = subprocess.run(
+            [sys.executable, "-m", "sentiment.correlate", "--in", str(tmp)], cwd=ROOT, capture_output=True, text=True
+        ).stdout
+    finally:
+        tmp.unlink()
+    for label in ("contemporaneous", "lagged", "event study"):
+        m = re.search(rf"^{label}.*95% CI (\[[^\]]+\])", out, re.M)
+        assert m, f"correlate printed no {label} interval"
+        assert m.group(1) in line, f"README grown-corpus line omits the {label} interval {m.group(1)}"
