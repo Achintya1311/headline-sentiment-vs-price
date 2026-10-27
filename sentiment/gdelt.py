@@ -109,13 +109,15 @@ def fetch_gdelt_live(
     maxrecords: int = 50,
     timeout: float = 15.0,
 ) -> tuple[list[Headline], str]:
-    """Returns (headlines, status); status is "ok", "robots_denied", or
+    """Returns (headlines, status); status is "ok", "robots_denied",
+    "robots_unreachable: <reason>" (robots.txt could not be read, R27) or
     "fetch_failed: <reason>" - the same contract ``sentiment.scrape``'s
     ``scrape_feed_live`` already uses, so callers can handle both sources
     the same way."""
     url = build_query_url(query, maxrecords=maxrecords)
     if not robots.can_fetch(url):
-        return [], "robots_denied"
+        reason = robots.unreadable_reason(url)
+        return [], f"robots_unreachable: {reason}" if reason else "robots_denied"
     host = urllib.parse.urlparse(url).netloc
     limiter.wait(host, extra_delay=max(robots.crawl_delay(url), DEFAULT_MIN_INTERVAL_SECONDS))
     try:

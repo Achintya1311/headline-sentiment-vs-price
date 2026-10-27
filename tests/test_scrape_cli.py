@@ -58,3 +58,20 @@ def test_live_success_no_snapshot_leaves_fixture_untouched(tmp_path: Path, monke
     assert status == "ok"
     assert len(headlines) == 1
     assert not fixture_path.exists()
+
+
+def test_live_feed_says_unreachable_when_robots_could_not_be_read(monkeypatch):
+    # R27: same distinction on the RSS path.
+    from sentiment.robots import RobotsDenied
+    from sentiment.scrape import FEEDS, scrape_feed_live
+
+    def denied(url, robots, limiter):
+        raise RobotsDenied(url)
+
+    monkeypatch.setattr("sentiment.scrape.polite_get", denied)
+    robots = RobotsCache()
+    monkeypatch.setattr(robots, "unreadable_reason", lambda url: "timed out")
+    feed = FEEDS["economic_times_markets"]
+    headlines, status = scrape_feed_live(feed, robots, RateLimiter(), snapshot=False)
+    assert status == "robots_unreachable: timed out"
+    assert headlines == []

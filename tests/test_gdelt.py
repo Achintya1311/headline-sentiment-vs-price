@@ -94,3 +94,27 @@ def test_fetch_gdelt_live_treats_the_rate_limit_text_response_as_a_fetch_failure
     headlines, status = fetch_gdelt_live("Infosys", robots, RateLimiter())
     assert status.startswith("fetch_failed")
     assert headlines == []
+
+
+def test_fetch_gdelt_live_says_unreachable_when_robots_could_not_be_read(monkeypatch):
+    # R27: the Actions logs showed every company "robots_denied" after a
+    # 10 s robots.txt timeout; that is an unreadable file, not a disallow.
+    robots = RobotsCache()
+    monkeypatch.setattr(robots, "can_fetch", lambda url: False)
+    monkeypatch.setattr(robots, "unreadable_reason", lambda url: "<urlopen error timed out>")
+    headlines, status = fetch_gdelt_live("Infosys", robots, RateLimiter())
+    assert status == "robots_unreachable: <urlopen error timed out>"
+    assert headlines == []
+
+
+def test_scrape_gdelt_run_summarises_when_every_query_was_skipped(monkeypatch, tmp_path, capsys):
+    from sentiment import scrape_gdelt
+
+    monkeypatch.setattr(
+        scrape_gdelt, "fetch_gdelt_live", lambda company, robots, limiter: ([], "robots_unreachable: timed out")
+    )
+    code = scrape_gdelt.run(["Infosys", "Wipro"], live=True, out=tmp_path / "h.csv", snapshot=False)
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "[Infosys] SKIPPED (robots_unreachable: timed out)" in err
+    assert "GDELT: 0 of 2 queries fetched (2 robots_unreachable)" in err

@@ -57,11 +57,14 @@ def run(companies: list[str], live: bool, out: Path, snapshot: bool = True) -> i
     all_headlines: list[Headline] = []
     exit_code = 0
 
+    skipped: dict[str, int] = {}
     for company in companies:
         if live:
             headlines, status = fetch_gdelt_live(company, robots, limiter)
             if status != "ok":
                 print(f"[{company}] SKIPPED ({status})", file=sys.stderr)
+                kind = status.split(":", 1)[0]
+                skipped[kind] = skipped.get(kind, 0) + 1
                 if status == "robots_denied":
                     continue
                 exit_code = 1
@@ -91,6 +94,13 @@ def run(companies: list[str], live: bool, out: Path, snapshot: bool = True) -> i
                 continue
         print(f"[{company}] {status}: {len(headlines)} headlines")
         all_headlines.extend(headlines)
+
+    if live and skipped:
+        # R27: one line a workflow log reader cannot miss, so a source that
+        # silently returns nothing every day is visible.
+        fetched = len(companies) - sum(skipped.values())
+        kinds = ", ".join(f"{n} {k}" for k, n in sorted(skipped.items()))
+        print(f"GDELT: {fetched} of {len(companies)} queries fetched ({kinds})", file=sys.stderr)
 
     prior_count = len(read_csv(out)) if out.exists() else 0
     merged = merge_and_write(out, all_headlines)

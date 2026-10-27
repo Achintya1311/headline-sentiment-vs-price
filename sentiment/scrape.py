@@ -43,7 +43,8 @@ def scrape_feed_offline(feed: Feed) -> list[Headline]:
 def scrape_feed_live(
     feed: Feed, robots: RobotsCache, limiter: RateLimiter, snapshot: bool = True
 ) -> tuple[list[Headline], str]:
-    """Returns (headlines, status). status is "ok", "robots_denied", or "fetch_failed: <reason>".
+    """Returns (headlines, status). status is "ok", "robots_denied",
+    "robots_unreachable: <reason>" (R27) or "fetch_failed: <reason>".
 
     On success, also overwrites ``feed.fixture`` with the bytes just fetched
     when ``snapshot`` is set - outlets delete and rewrite headlines, so the
@@ -52,7 +53,8 @@ def scrape_feed_live(
     try:
         xml_bytes = polite_get(feed.url, robots, limiter)
     except RobotsDenied:
-        return [], "robots_denied"
+        reason = robots.unreadable_reason(feed.url)
+        return [], f"robots_unreachable: {reason}" if reason else "robots_denied"
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         return [], f"fetch_failed: {e}"
     if snapshot:

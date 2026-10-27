@@ -114,3 +114,36 @@ def test_rate_limiter_respects_crawl_delay_over_default(monkeypatch):
     fake_time[0] += 1.0
     limiter.wait("example.com", extra_delay=10.0)
     assert slept == [9.0]
+
+
+def test_unreadable_robots_is_recorded_apart_from_a_disallow(monkeypatch):
+    # R27: a timeout reading robots.txt still fails closed, but the cache
+    # keeps the reason so callers can say "unreachable", not "denied".
+    import urllib.error
+
+    def fake_urlopen(*args, **kwargs):
+        raise urllib.error.URLError("timed out")
+
+    monkeypatch.setattr("sentiment.robots.urllib.request.urlopen", fake_urlopen)
+    cache = RobotsCache()
+    url = "https://api.example/api/v2/doc/doc?q=x"
+    assert cache.can_fetch(url) is False
+    assert "timed out" in cache.unreadable_reason(url)
+
+
+def test_a_real_disallow_has_no_unreadable_reason(monkeypatch):
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"User-agent: *\nDisallow: /\n"
+
+    monkeypatch.setattr("sentiment.robots.urllib.request.urlopen", lambda *a, **k: Resp())
+    cache = RobotsCache()
+    url = "https://denies.example/feed.xml"
+    assert cache.can_fetch(url) is False
+    assert cache.unreadable_reason(url) is None

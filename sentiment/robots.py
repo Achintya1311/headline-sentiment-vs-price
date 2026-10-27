@@ -58,6 +58,9 @@ class RobotsCache:
         self.user_agent = user_agent
         self.timeout = timeout
         self._parsers: dict[str, RobotFileParser] = {}
+        # R27: hosts whose robots.txt could not be read at all, with why.
+        # They still fail closed; this only lets callers say so honestly.
+        self._unreadable: dict[str, str] = {}
 
     def _get_parser(self, host: str, scheme: str) -> RobotFileParser:
         if host in self._parsers:
@@ -77,12 +80,19 @@ class RobotsCache:
             else:
                 # e.g. 404: no robots.txt published -> treat as fully allowed.
                 parser.allow_all = True
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
             # Can't confirm permission at all. Fail closed: do not scrape a
             # host whose robots.txt we could not read.
             parser.disallow_all = True
+            self._unreadable[host] = str(e)
         self._parsers[host] = parser
         return parser
+
+    def unreadable_reason(self, url: str) -> str | None:
+        """Why this URL's host robots.txt could not be read, or None if it was
+        read (or answered with an HTTP status). A refusal for this reason is
+        "robots_unreachable", not a disallow (R27)."""
+        return self._unreadable.get(urlparse(url).netloc)
 
     def can_fetch(self, url: str) -> bool:
         parsed = urlparse(url)
