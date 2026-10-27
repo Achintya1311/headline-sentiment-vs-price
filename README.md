@@ -7,7 +7,7 @@ Educational research on historical data. Not investment advice. Not a SEBI-regis
 **Finding (Day 5, null result):** contemporaneous r = -0.185, 95% CI [-0.555, +0.246], n=23 — a CI that comfortably contains zero. Low resolution too: 17 of 23 headlines saturate at the same VADER score, leaving little independent variation to explain. See Findings and "Why this null result might be spurious anyway" below.
 **Chart:** `outputs/sentiment_price_overlay.png` — cumulative return for the 3 high-magnitude headlines, with the aligned session marked.
 **Reproduce:** `python -m sentiment.correlate --in fixtures/headlines/headlines_regression_50.csv` (the frozen 50-headline corpus; prints r=-0.185, n=23 exactly)
-**Grown corpus (rerun 26 Oct 2026, at `096b872`):** `python -m sentiment.correlate` on the daily-growing `headlines_raw.csv` (432 headlines at that commit) gives contemporaneous r = -0.224, 95% CI [-0.483, +0.071], n=46; lagged r = -0.126, 95% CI [-0.414, +0.185], n=42. Both correlation CIs still contain zero. The same rerun's event study (|compound| > 0.3) gives a mean-return gap of -0.0299, 95% CI [-0.0569, -0.0063], an interval that excludes zero; it rests on 6 headlines from 5 companies (two of them HDFC Bank on one day) against 40, so it is not reported as a finding (see Day 77). The collector adds headlines every day, so later commits give other numbers; `git checkout 096b872` reproduces these. See the Day 77 update under Findings.
+**Grown corpus (rerun 27 Oct 2026, Day 198, corpus at `67baa03`):** `python -m sentiment.correlate` on the daily-growing `headlines_raw.csv` (448 headlines at that commit), after `sentiment/tickers.py` learned that any title opening with "Infosys " is about Infosys alone (hub `CRITIQUES.md` P134; before, only the "Share Price Highlights" template resolved, so 1 of 11 Infosys titles was used), gives contemporaneous r = -0.028, 95% CI [-0.296, +0.245], n=53; lagged r = -0.247, 95% CI [-0.510, +0.057], n=43. Both correlation CIs still contain zero. The same rerun's event study (|compound| > 0.3) gives a mean-return gap of -0.0058, 95% CI [-0.0372, +0.0231]; with 9 high-magnitude headlines (three of them INFY.NS on 2026-10-26, two HDFC Bank on 2026-10-19) against 44, the interval now contains zero. The 26 Oct rerun at `096b872` (before the Infosys rule) gave contemporaneous r = -0.224, n=46, and an event-study gap of -0.0299, 95% CI [-0.0569, -0.0063], on 6 headlines; that interval excluded zero, but it was never reported as a finding (see Day 77), and adding seven Infosys rows was enough to erase it. The collector adds headlines every day, so later commits give other numbers; `git checkout 67baa03 -- fixtures/headlines/headlines_raw.csv` with this code reproduces these. See the Day 77 update under Findings.
 
 Scores financial headlines and tests them against subsequent returns, with a leakage control that has to fail before any result is believed.
 
@@ -241,7 +241,7 @@ Days 5-8 ran several related tests on one small sample, so a further pass over t
 - Day 5's sample is small and lopsided in a way that limits what its null result can mean: 23 headlines, 17 of them tied at the exact same VADER compound score because the dominant headline shape (a "Share Price Highlights" liveblog title) carries almost no distinguishing sentiment content. A wider or more varied headline sample - more days scraped, or a feed with more editorial/opinion content - would give the correlation more independent variation to actually test, and might not replicate a near-zero r.
 - Every price return in Day 5 is single-session (open-to-close), from one day's scrape (28-29 Sep 2026) against one day's price snapshot. It is a cross-section across 23 different companies on 1-2 calendar sessions, not a time series across many trading days - a materially different, weaker design than tracking one sentiment/return pair over months, and the confidence intervals reported are exactly that wide because of it.
 - Lagged return for the 8 headlines aligned to Tuesday 29 Sep could not be computed at all in this run - their next session (Wednesday 30 Sep) had not traded yet. Re-running `sentiment.correlate --live` a day later filled that in for this specific pair; more generally, `fixtures/prices/*.json` was frozen at this run's fetch time with nothing refreshing it until `.github/workflows/fetch-prices.yml` (Day 77 fix-phase, D26) started doing so weekly - see the "Day 77 fix-phase (D26) update" paragraphs after Days 5-8 above for the re-run against the now-growing price fixture.
-- `sentiment/tickers.py` is a closed, hand-written lookup covering only the headline shapes in this repo's one committed fixture - it does not generalize to a new scrape without new rules being added on purpose, by design (see the module's own docstring for why a fuzzy matcher was rejected).
+- `sentiment/tickers.py` is a closed, hand-written lookup covering only the headline shapes in this repo's one committed fixture - it does not generalize to a new scrape without new rules being added on purpose, by design (see the module's own docstring for why a fuzzy matcher was rejected). The one broader rule, any title opening with "Infosys " (Day 198, P134), still relies on the feed's habit of starting a multi-company wrap with "Market wrap:"; a wrap that opened with the company name would be misread as single-company.
 - `market_hours.is_trading_day` is weekday-only - there is no NSE holiday calendar. A headline published on an actual market holiday (e.g. a Monday that NSE has closed for a festival) is wrongly treated as a trading day and aligned one session too early. Free NSE holiday-calendar data exists but has not been wired in yet; until it is, `session_date` should be read as "the next weekday", not "the next actual trading day", on the handful of days a year that differ.
 - The alignment rule is deliberately conservative for intraday headlines: a headline published at 14:00 IST still has 90 minutes of the same session left to react in, but this module rolls it all the way to the next day rather than trying to use the partial remainder of today's session - there is no intraday price fixture in this repo to test a same-day partial reaction against, and guessing without one would be exactly the kind of unverified number this portfolio avoids.
 - Correlation over a short window with many tested horizons manufactures significance. The hypothesis is fixed before the data is touched.
@@ -280,15 +280,15 @@ Part of an eight-repo research pipeline. Stock Stalker screens the NSE universe;
 ```json
 {
   "sentiment": {
-    "score_7d": null,
-    "headline_count_7d": 0,
+    "score_7d": 0.302125,
+    "headline_count_7d": 8,
     "model": "vader",
-    "coverage": "none"
+    "coverage": "full"
   }
 }
 ```
 
-Every field is empty because the INFY-resolved headline has aged out of the trailing 7-day window as the corpus grew past its original September snapshot — not a bug, the window is supposed to forget old headlines.
+As of 27 Oct 2026 the trailing 7-day window holds 8 Infosys headlines (session dates 23-27 Oct, around the Q2 results). Until Day 198 (hub `CRITIQUES.md` P134) every field here was empty, because the resolver only matched the "Infosys Share Price Highlights" liveblog title, so results, dividend and move headlines about Infosys never reached the contract. The window forgets old headlines by design, so this contract goes empty again on a quiet week.
 
 Communication is by file contract, not imports, so either side can be refactored without breaking the other.
 

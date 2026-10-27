@@ -122,7 +122,9 @@ def test_run_writes_output_csv_and_succeeds(tmp_path: Path, monkeypatch):
                 datetime(2026, 9, 28, 2, 0, 0, tzinfo=timezone.utc),
             ),
             make_headline(
-                "Infosys extends losses amid weak IT sentiment",
+                # a market wrap listing Infosys; Day 198 (P134) made plain
+                # "Infosys ..." titles resolve, so the unresolved one is a wrap
+                "Market wrap: Infosys, HCL Tech, Wipro top gainers and losers on Nifty",
                 "2",
                 datetime(2026, 9, 28, 2, 30, 0, tzinfo=timezone.utc),
             ),

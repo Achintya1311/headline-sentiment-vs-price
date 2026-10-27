@@ -33,7 +33,10 @@ _RULES: list[tuple[re.Pattern[str], str, str | None]] = [
     (re.compile(r"^Tata Steel Share Price Highlights"), "Tata Steel", "TATASTEEL.NS"),
     (re.compile(r"^LTIMindtree Share Price Highlights"), "LTIMindtree", None),
     (re.compile(r"^HUL Share Price Highlights"), "HUL", "HINDUNILVR.NS"),
-    (re.compile(r"^Infosys Share Price Highlights"), "Infosys", "INFY.NS"),
+    # Any title that opens with "Infosys " is about Infosys alone (results,
+    # moves, dividend, liveblog); market wraps that list it start "Market
+    # wrap:" and stay unresolved (Day 198, hub CRITIQUES.md P134).
+    (re.compile(r"^Infosys\b"), "Infosys", "INFY.NS"),
     (re.compile(r"^HCL Tech Share Price Highlights"), "HCL Tech", "HCLTECH.NS"),
     (re.compile(r"^HDFC Life Share Price Highlights"), "HDFC Life", "HDFCLIFE.NS"),
     (re.compile(r"^Eicher Motors Share Price Highlights"), "Eicher Motors", "EICHERMOT.NS"),
