@@ -12,7 +12,8 @@ out of ``sentiment.correlate`` so the already-reported Day 5 VADER/raw-return
 numbers are never confused with it.
 
 The gate (see README): at least 1,000 headlines resolved to a priced ticker
-(after excluding ones that name their own price move), over at least 30
+(after excluding ones that name their own price move and, since R28, the
+liveblog template titles), over at least 30
 distinct sessions, from at least 3 distinct sources. ``docs/POWER.md`` is
 why the gate moved there from the original, underpowered 100/10/no-source-
 count bar.
@@ -28,6 +29,7 @@ is not as of this day's run.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from dataclasses import dataclass
 from datetime import date
@@ -45,6 +47,17 @@ from sentiment.stats import PearsonResult, pearson_with_ci
 PREREG_MIN_HEADLINES = 1000
 PREREG_MIN_SESSIONS = 30
 PREREG_MIN_SOURCES = 3
+
+# R28 (amended 27 Oct 2026, before the statistic was ever computed): the
+# Economic Times "<Company> Share Price Highlights: <Company> Stock Price
+# History" liveblog titles carry no news, and FinBERT reads every one as
+# neutral (README Day 3). They were 29 of the 33 headlines passing the gate
+# on 27 Oct, so leaving them in would let a met gate correlate a constant.
+_LIVEBLOG_TEMPLATE = re.compile(r"Share Price Highlights:.*Stock Price History", re.IGNORECASE)
+
+
+def is_liveblog_template(title: str) -> bool:
+    return bool(_LIVEBLOG_TEMPLATE.search(title))
 
 
 @dataclass(frozen=True)
@@ -75,16 +88,24 @@ def check_gate(rows: list[dict]) -> GateStatus:
 
 def usable_rows(headlines: list, live: bool = False) -> list[dict]:
     """Headlines resolved to a priced ticker and session, minus ones that
-    name their own price move, with each remaining row's ``[0, +1]``
+    name their own price move or are liveblog template titles (R28), with
+    each remaining row's ``[0, +1]``
     market-adjusted abnormal return attached - or dropped if that window
     isn't available yet. VADER's default scorer runs here only for its
     resolution/pairing side effect; its ``compound`` is discarded and
     overwritten with FinBERT's once (if) the gate is met, in
     ``run_prereg_test``."""
+    return usable_rows_with_counts(headlines, live=live)[0]
+
+
+def usable_rows_with_counts(headlines: list, live: bool = False) -> tuple[list[dict], int]:
+    """:func:`usable_rows` plus how many resolved headlines were dropped as
+    liveblog template titles (R28), so the gate line can say so."""
     rows, _, _ = build_rows_from_headlines(headlines, live=live)
-    candidates = [r for r in rows if not names_price_move(r["title"])]
+    n_templates = sum(1 for r in rows if is_liveblog_template(r["title"]))
+    candidates = [r for r in rows if not names_price_move(r["title"]) and not is_liveblog_template(r["title"])]
     if not candidates:
-        return []
+        return [], n_templates
 
     tickers = sorted({r["ticker"] for r in candidates})
     bars_by_ticker = {t: load_bars(t, live=live) for t in tickers}
@@ -100,7 +121,7 @@ def usable_rows(headlines: list, live: bool = False) -> list[dict]:
         row = dict(r)
         row["abnormal_return_0_1"] = abnormal
         usable.append(row)
-    return usable
+    return usable, n_templates
 
 
 @dataclass(frozen=True)
@@ -142,11 +163,13 @@ def run(in_path: Path, live: bool) -> int:
     headlines = read_csv(in_path)
     result = run_prereg_test(headlines, live=live)
     gate = result.gate
+    _, n_templates = usable_rows_with_counts(headlines, live=live)
 
     print(
         f"pre-registered follow-up test gate: {gate.n_headlines} headlines, "
         f"{gate.n_sessions} sessions, {gate.n_sources} source(s) "
-        f"(need >={PREREG_MIN_HEADLINES}/{PREREG_MIN_SESSIONS}/{PREREG_MIN_SOURCES})"
+        f"(need >={PREREG_MIN_HEADLINES}/{PREREG_MIN_SESSIONS}/{PREREG_MIN_SOURCES}); "
+        f"{n_templates} liveblog template title(s) excluded (R28)"
     )
     if not gate.met:
         print(

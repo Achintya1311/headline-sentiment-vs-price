@@ -74,14 +74,56 @@ def test_usable_rows_excludes_price_naming_headlines(tmp_path: Path, monkeypatch
         ),
     ]
     rows = usable_rows(headlines)
-    assert len(rows) == 1
-    assert rows[0]["title"] == "Infosys Share Price Highlights: Infosys Stock Price History"
+    # R28: the liveblog template title is excluded too, so neither survives.
+    assert rows == []
+
+
+def test_usable_rows_keeps_a_headline_that_is_neither_a_template_nor_a_price_move(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(prices, "FIXTURE_DIR", tmp_path)
+    save_fixture(
+        "FORTIS.NS",
+        [
+            Bar(date=dt.date(2026, 9, 28), open=100.0, close=105.0),
+            Bar(date=dt.date(2026, 9, 29), open=105.0, close=103.0),
+        ],
+    )
+    headlines = [
+        make_headline(
+            "Fortis Healthcare shares in focus as Supreme Court allows forensic audit to proceed",
+            "1",
+            datetime(2026, 9, 28, 2, 0, 0, tzinfo=timezone.utc),
+        ),
+    ]
+    rows = usable_rows(headlines)
+    assert [r["title"] for r in rows] == [headlines[0].title]
+
+
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        ("Infosys Share Price Highlights: Infosys Stock Price History", True),
+        ("Grasim Inds Share Price Highlights: Grasim Inds. Stock Price History", True),
+        ("Infosys shares rise 4% after Q2 results", False),
+        ("HDFC Bank CEO transition nears; Jefferies sees rerating scope", False),
+    ],
+)
+def test_is_liveblog_template(title, expected):
+    assert prereg.is_liveblog_template(title) is expected
+
+
+def test_gate_line_counts_the_templates_it_left_out(capsys):
+    # R28: on the committed corpus 29 of the 33 headlines that used to pass
+    # the gate were liveblog titles; the gate line now says how many it drops.
+    exit_code = prereg.run(prereg.DEFAULT_IN, live=False)
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "liveblog template title(s) excluded" in out
 
 
 def test_usable_rows_attaches_abnormal_return_0_1_and_drops_rows_missing_it(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(prices, "FIXTURE_DIR", tmp_path)
     save_fixture(
-        "INFY.NS",
+        "FORTIS.NS",
         [
             Bar(date=dt.date(2026, 9, 28), open=100.0, close=110.0),
             Bar(date=dt.date(2026, 9, 29), open=110.0, close=108.0),
@@ -91,12 +133,12 @@ def test_usable_rows_attaches_abnormal_return_0_1_and_drops_rows_missing_it(tmp_
     # [0, +1] window has no +1 leg yet and must be dropped, not crash.
     headlines = [
         make_headline(
-            "Infosys Share Price Highlights: Infosys Stock Price History",
+            "Fortis Healthcare shares in focus as Supreme Court allows forensic audit to proceed",
             "1",
             datetime(2026, 9, 28, 2, 0, 0, tzinfo=timezone.utc),
         ),
         make_headline(
-            "Infosys Share Price Highlights: Infosys Stock Price History",
+            "Fortis Healthcare shares in focus as Supreme Court allows forensic audit to proceed",
             "2",
             datetime(2026, 9, 29, 2, 0, 0, tzinfo=timezone.utc),
         ),
