@@ -17,7 +17,8 @@ For each resolved headline:
 - ``contemporaneous_return``: open-to-close return of the trading session
   Day 4's ``align_headline`` assigns it (the first session whose open comes
   strictly after the headline was published - the first return the market
-  had available to react with).
+  had available to react with). When that weekday was an NSE holiday (no
+  bar in the ticker's fixture), the ticker's next bar is used instead (P135).
 - ``lagged_return``: open-to-close return of the *next* trading session, or
   blank if that session has not happened yet (see README - this run's "now"
   is inside the most recent aligned session, so same-day headlines have no
@@ -38,7 +39,7 @@ from pathlib import Path
 
 from sentiment.headline import read_csv
 from sentiment.market_hours import align_headline
-from sentiment.prices import PriceFetchError, bar_on, load_bars, next_session_bar
+from sentiment.prices import PriceFetchError, load_bars, next_session_bar, session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
 from sentiment.tickers import resolve
 from sentiment.vader_score import score_headline
@@ -104,11 +105,11 @@ def build_rows_from_headlines(
             price_errors.append((ticker, str(exc)))
             continue
 
-        session_bar = bar_on(bars, alignment.session_date)
-        if session_bar is None:
+        bar = session_bar(bars, alignment.session_date)
+        if bar is None:
             price_errors.append((ticker, f"no bar for session_date {alignment.session_date}"))
             continue
-        lagged_bar = next_session_bar(bars, alignment.session_date)
+        lagged_bar = next_session_bar(bars, bar.date)
 
         scored = score_fn(h)
         rows.append(
@@ -117,9 +118,9 @@ def build_rows_from_headlines(
                 "company": company,
                 "ticker": ticker,
                 "source": h.source,
-                "session_date": alignment.session_date.isoformat(),
+                "session_date": bar.date.isoformat(),
                 "compound": scored.compound,
-                "contemporaneous_return": session_bar.session_return,
+                "contemporaneous_return": bar.session_return,
                 "lagged_return": lagged_bar.session_return if lagged_bar else None,
             }
         )

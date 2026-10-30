@@ -134,6 +134,21 @@ def bar_on(bars: list[Bar], on: date) -> Bar | None:
     return None
 
 
+def session_bar(bars: list[Bar], on: date) -> Bar | None:
+    """The bar for an aligned ``session_date``, rolling past market holidays.
+
+    ``market_hours`` has no NSE holiday calendar, so a headline before a
+    holiday's open is aligned to the holiday itself, a day with no bar. The
+    first bar after it is the first session that actually opened after the
+    headline (still leak-free), so use that (P135). A date after the last
+    bar has not traded yet and stays ``None``.
+    """
+    exact = bar_on(bars, on)
+    if exact is not None:
+        return exact
+    return next_session_bar(bars, on)
+
+
 def next_session_bar(bars: list[Bar], after: date) -> Bar | None:
     """The first bar strictly after ``after`` (bars are already date-ordered
     by Yahoo's chart response)."""

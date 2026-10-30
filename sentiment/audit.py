@@ -40,7 +40,7 @@ from pathlib import Path
 
 from sentiment.headline import Headline, read_csv
 from sentiment.market_hours import align_headline
-from sentiment.prices import Bar, PriceFetchError, bar_on, load_bars
+from sentiment.prices import Bar, PriceFetchError, load_bars, session_bar
 from sentiment.stats import pearson_r, permutation_p_value
 from sentiment.tickers import resolve
 from sentiment.vader_score import score_headline
@@ -96,11 +96,11 @@ def _returns_for_times(resolved: list[_Resolved], times: list[datetime]) -> tupl
     returns: list[float] = []
     for r, published_at in zip(resolved, times):
         alignment = align_headline(published_at)
-        session_bar = bar_on(r.bars, alignment.session_date)
-        if session_bar is None:
+        bar = session_bar(r.bars, alignment.session_date)
+        if bar is None:
             continue
         compounds.append(r.compound)
-        returns.append(session_bar.session_return)
+        returns.append(bar.session_return)
     return compounds, returns
 
 

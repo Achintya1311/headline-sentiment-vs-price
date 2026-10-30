@@ -44,9 +44,10 @@ class Timing(str, Enum):
 
 
 def is_trading_day(day: date) -> bool:
-    """Weekday check only - no NSE holiday calendar. See README limitations:
-    a headline published on an actual NSE holiday is treated as a normal
-    weekday and rolled forward by one calendar day too few.
+    """Weekday check only - no NSE holiday calendar. A headline before an
+    NSE holiday's open is aligned to the holiday itself; callers that pair
+    it with prices use ``prices.session_bar``, which rolls to the ticker's
+    next bar (P135). See README limitations.
     """
     return day.weekday() < 5
 
