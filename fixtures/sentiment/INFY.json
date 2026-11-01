@@ -1,8 +1,8 @@
 {
   "sentiment": {
-    "score_7d": null,
-    "headline_count_7d": 0,
+    "score_7d": -0.8501014006324112,
+    "headline_count_7d": 2,
     "model": "finbert",
-    "coverage": "none"
+    "coverage": "partial"
   }
 }
