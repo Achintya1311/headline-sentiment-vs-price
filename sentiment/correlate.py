@@ -23,6 +23,12 @@ For each resolved headline:
   blank if that session has not happened yet (see README - this run's "now"
   is inside the most recent aligned session, so same-day headlines have no
   lagged return to report yet).
+- ``gap_return`` (P159): previous bar's close to the session bar's open, only
+  for a headline published after that close (15:30 IST) and before 09:00 IST
+  on the session date, when the pre-open call auction that sets the open
+  starts; blank otherwise. Open-to-close starts after the open, so for news
+  released outside market hours it misses the first price reaction. Printed
+  as an exploratory line, not the pre-registered test.
 
 Both are correlated against VADER's ``compound`` score (Pearson r with a
 95% CI). The event study splits headlines into "high-magnitude" (|compound|
@@ -38,8 +44,10 @@ import sys
 from pathlib import Path
 
 from sentiment.headline import read_csv
-from sentiment.market_hours import align_headline
-from sentiment.prices import PriceFetchError, load_bars, next_session_bar, session_bar
+from datetime import datetime, time
+
+from sentiment.market_hours import IST, MARKET_CLOSE, align_headline
+from sentiment.prices import Bar, PriceFetchError, load_bars, next_session_bar, session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
 from sentiment.tickers import resolve
 from sentiment.vader_score import score_headline
@@ -62,7 +70,35 @@ ROW_FIELDNAMES = [
     "compound",
     "contemporaneous_return",
     "lagged_return",
+    "gap_return",
 ]
+
+# NSE's pre-open call auction (09:00-09:08 IST) sets the open price, so a
+# headline from 09:00 on may already be in it: no leak-free gap for it.
+PRE_OPEN_AUCTION = time(9, 0)
+
+
+def gap_return(published_at: datetime, bars: list[Bar], bar: Bar) -> float | None:
+    """Previous close to ``bar``'s open, or None when that gap is not
+    entirely after the headline (P159).
+
+    The previous close is the last bar before ``bar`` in the ticker's own
+    fixture, so a holiday-rolled session gaps from the last real close. The
+    headline must come strictly after that close and before 09:00 IST on
+    ``bar``'s date."""
+    prev = None
+    for b in bars:
+        if b.date >= bar.date:
+            break
+        prev = b
+    if prev is None:
+        return None
+    local = published_at.astimezone(IST)
+    after_close = datetime.combine(prev.date, MARKET_CLOSE, tzinfo=IST)
+    before_auction = datetime.combine(bar.date, PRE_OPEN_AUCTION, tzinfo=IST)
+    if not (after_close < local < before_auction):
+        return None
+    return bar.open / prev.close - 1.0
 
 
 def build_rows_from_headlines(
@@ -122,6 +158,7 @@ def build_rows_from_headlines(
                 "compound": scored.compound,
                 "contemporaneous_return": bar.session_return,
                 "lagged_return": lagged_bar.session_return if lagged_bar else None,
+                "gap_return": gap_return(h.published_at, bars, bar),
             }
         )
 
@@ -195,6 +232,17 @@ def run(in_path: Path, out_path: Path, live: bool, event_threshold: float) -> in
         )
     else:
         print(f"lagged:          not enough sessions with a next trading day yet (n={len(lagged_rows)})")
+
+    gap_rows = [r for r in rows if r["gap_return"] is not None]
+    if len(gap_rows) >= 2:
+        gap_stat = pearson_with_ci([r["compound"] for r in gap_rows], [r["gap_return"] for r in gap_rows])
+        print(
+            f"overnight gap:   r={gap_stat.r:+.3f}  95% CI [{gap_stat.ci_low:+.3f}, "
+            f"{gap_stat.ci_high:+.3f}]  n={gap_stat.n}  (previous close to open, headlines after the "
+            f"close and before 09:00 IST only; exploratory, not the pre-registered test)"
+        )
+    else:
+        print(f"overnight gap:   not enough out-of-hours headlines for a correlation (n={len(gap_rows)})")
 
     high = [r["contemporaneous_return"] for r in rows if abs(r["compound"]) > event_threshold]
     low = [r["contemporaneous_return"] for r in rows if abs(r["compound"]) <= event_threshold]
