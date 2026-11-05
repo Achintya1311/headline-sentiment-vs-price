@@ -46,7 +46,7 @@ matplotlib.use("Agg")  # CLI-only: never opens a window, always writes a file
 import matplotlib.pyplot as plt
 
 from sentiment.correlate import DEFAULT_EVENT_THRESHOLD, DEFAULT_IN, build_rows
-from sentiment.market import equal_weighted_daily_returns, load_universe_bars
+from sentiment.market import equal_weighted_daily_returns, index_daily_returns, load_universe_bars
 from sentiment.prices import Bar, load_bars
 from sentiment import DISCLAIMER
 
@@ -141,6 +141,20 @@ def abnormal_return_0_1(
     if 0 not in car or 1 not in car:
         return None
     return car[1]
+
+
+def mean_ar_0_1(
+    rows: list[dict], bars_by_ticker: dict[str, list[Bar]], benchmark: dict[date, float]
+) -> tuple[float | None, int]:
+    """Mean [0, +1] abnormal return against ``benchmark`` over the rows that
+    have both legs, and how many did (P163: the same window against the
+    equal-weighted proxy and against NIFTY 50)."""
+    values = []
+    for r in rows:
+        v = abnormal_return_0_1(bars_by_ticker[r["ticker"]], date.fromisoformat(str(r["session_date"])), benchmark)
+        if v is not None:
+            values.append(v)
+    return (sum(values) / len(values) if values else None), len(values)
 
 
 def split_by_magnitude(rows: list[dict], event_threshold: float) -> tuple[list[dict], list[dict]]:
@@ -280,6 +294,20 @@ def run(
                 print(f"  {label}-magnitude CAR at offset 0: {mean:+.4f} (n={n})")
     else:
         print("no offsets had both ticker and market-proxy data; CAR chart skipped", file=sys.stderr)
+
+    # P163: the same [0, +1] window against the proxy and against NIFTY 50.
+    # Descriptive group means, not the pre-registered statistic.
+    index_returns = index_daily_returns()
+    benchmarks = [("equal-weighted proxy", market_returns)]
+    if index_returns is not None:
+        benchmarks.append(("NIFTY 50", index_returns))
+    for label, group in (("high", high), ("low", low)):
+        for name, bench in benchmarks:
+            mean, n = mean_ar_0_1(group, bars_by_ticker, bench)
+            shown = f"{mean:+.4f}" if mean is not None else "n/a"
+            print(f"  {label}-magnitude mean [0, +1] abnormal return vs {name}: {shown} (n={n})")
+    if index_returns is None:
+        print("  no NIFTY 50 fixture yet (fixtures/prices/^NSEI.json); python -m sentiment.fetch_prices fetches it")
 
     return 0
 

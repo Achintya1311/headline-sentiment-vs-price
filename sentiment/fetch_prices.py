@@ -18,12 +18,16 @@ from __future__ import annotations
 
 import sys
 
+from sentiment.market import INDEX_TICKER
 from sentiment.prices import PriceFetchError, load_bars
 from sentiment.tickers import known_tickers
 
 
 def run() -> int:
-    tickers = known_tickers()
+    # NIFTY 50 rides along as the abnormal-return benchmark (P163); its
+    # fixture sits in fixtures/prices/ so the workflow commits it, and
+    # sentiment.market keeps it out of the equal-weighted proxy.
+    tickers = known_tickers() + [INDEX_TICKER]
     failures: list[tuple[str, str]] = []
     for ticker in tickers:
         try:

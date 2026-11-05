@@ -1,13 +1,17 @@
 """Day 7: an equal-weighted market proxy for abnormal-return charts.
 
-There is no free, fixture-committed NSE benchmark index (NIFTY 50 or
-similar) anywhere in this repo - wiring one in would be a new data source,
-not this day's scope. Instead the "market" here is the equal-weighted mean
+Day 7 had no committed NSE index, so the "market" here is the equal-weighted mean
 daily open-to-close return, on each date, across every ticker already
 fetched into ``fixtures/prices/`` - the same 23-name universe Day 5 resolved
 headlines against. An abnormal return is then a ticker's return in excess of
 that proxy, not in excess of the real NSE market. See the README Findings
 and Limitations for what that substitution costs.
+
+Day 223 (hub CRITIQUES.md P163): NIFTY 50 (``^NSEI``) is now fetched from the
+same free Yahoo chart endpoint into ``fixtures/prices/^NSEI.json``, kept out
+of the proxy universe (an index is not a constituent), and offered as a
+second benchmark by ``index_daily_returns``. The pre-registered statistic
+still uses the proxy; changing it is a method decision, not a fix.
 """
 
 from __future__ import annotations
@@ -15,7 +19,9 @@ from __future__ import annotations
 from datetime import date
 
 from sentiment import prices
-from sentiment.prices import Bar
+from sentiment.prices import Bar, PriceFetchError
+
+INDEX_TICKER = "^NSEI"  # NIFTY 50 on Yahoo Finance
 
 
 def load_universe_bars() -> dict[str, list[Bar]]:
@@ -28,8 +34,20 @@ def load_universe_bars() -> dict[str, list[Bar]]:
     universe: dict[str, list[Bar]] = {}
     for path in sorted(prices.FIXTURE_DIR.glob("*.json")):
         ticker = path.stem
+        if ticker.startswith("^"):  # an index fixture, not a stock (P163)
+            continue
         universe[ticker] = prices.load_fixture(ticker)
     return universe
+
+
+def index_daily_returns() -> dict[date, float] | None:
+    """NIFTY 50's open-to-close return per date from its committed fixture,
+    or None when the fixture has not been fetched yet (P163)."""
+    try:
+        bars = prices.load_fixture(INDEX_TICKER)
+    except PriceFetchError:
+        return None
+    return {b.date: b.session_return for b in bars}
 
 
 def equal_weighted_daily_returns(universe: dict[str, list[Bar]]) -> dict[date, float]:

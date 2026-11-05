@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -50,7 +51,8 @@ def fixture_path(ticker: str) -> Path:
 def fetch_live(ticker: str, retries: int = 3) -> list[Bar]:
     """Fetch ``ticker``'s last month of daily bars from Yahoo Finance. Raises
     ``PriceFetchError`` if the symbol is not found or every retry fails."""
-    url = CHART_URL.format(ticker=ticker)
+    # quote() so an index symbol such as ^NSEI is sent as %5ENSEI (P163)
+    url = CHART_URL.format(ticker=urllib.parse.quote(ticker, safe=".-"))
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     last_error: Exception | None = None
     for attempt in range(retries):
