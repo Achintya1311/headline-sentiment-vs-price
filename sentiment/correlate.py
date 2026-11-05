@@ -4,6 +4,7 @@ event study on high-magnitude-sentiment headlines.
     python -m sentiment.correlate
     python -m sentiment.correlate --live      # re-fetch prices instead of fixtures
     python -m sentiment.correlate --event-threshold 0.3
+    python -m sentiment.correlate --in <csv> --prices-dir <dir>   # a frozen copy (P161)
 
 Scope: only headlines that ``sentiment.tickers.resolve`` maps to exactly one
 NSE ticker are used - a screener-list headline ("X among N stocks...") names
@@ -47,6 +48,7 @@ from sentiment.headline import read_csv
 from datetime import datetime, time
 
 from sentiment.market_hours import IST, MARKET_CLOSE, align_headline
+from sentiment import prices
 from sentiment.prices import Bar, PriceFetchError, load_bars, next_session_bar, session_bar
 from sentiment.stats import bootstrap_mean_diff_ci, pearson_with_ci
 from sentiment.tickers import resolve
@@ -266,12 +268,24 @@ def main() -> None:
     parser.add_argument("--out", dest="out_path", type=Path, default=DEFAULT_OUT, help="per-headline CSV to write")
     parser.add_argument("--live", action="store_true", help="re-fetch prices instead of reading fixtures")
     parser.add_argument(
+        "--prices-dir",
+        type=Path,
+        default=None,
+        help="read price fixtures from this directory instead of fixtures/prices (e.g. a frozen copy); not with --live",
+    )
+    parser.add_argument(
         "--event-threshold",
         type=float,
         default=DEFAULT_EVENT_THRESHOLD,
         help="|compound| above this is 'high-magnitude' for the event study",
     )
     args = parser.parse_args()
+    if args.prices_dir is not None:
+        if args.live:
+            parser.error("--prices-dir reads a fixed copy; --live would overwrite it")
+        if not args.prices_dir.is_dir():
+            parser.error(f"--prices-dir {args.prices_dir} is not a directory")
+        prices.FIXTURE_DIR = args.prices_dir
     print(DISCLAIMER)
     sys.exit(run(args.in_path, args.out_path, args.live, args.event_threshold))
 

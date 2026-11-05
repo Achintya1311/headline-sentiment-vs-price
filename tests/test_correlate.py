@@ -246,3 +246,38 @@ def test_build_rows_from_headlines_matches_build_rows_on_the_committed_fixture()
     assert rows_via_headlines == rows_via_path
     assert unresolved_via_headlines == unresolved_via_path
     assert price_errors_via_headlines == price_errors_via_path
+
+
+def test_prices_dir_flag_reads_another_fixture_directory(tmp_path: Path, monkeypatch):
+    # P161: the README's grown-corpus line reruns on a frozen price copy.
+    import datetime as dt
+    import subprocess
+    import sys
+
+    frozen = tmp_path / "frozen_prices"
+    monkeypatch.setattr(prices, "FIXTURE_DIR", frozen)
+    save_fixture(
+        "INFY.NS",
+        [Bar(date=dt.date(2026, 9, 28), open=100.0, close=105.0), Bar(date=dt.date(2026, 9, 29), open=105.0, close=103.0)],
+    )
+    in_path = tmp_path / "raw.csv"
+    write_csv(
+        [
+            make_headline("Infosys shares rise 2% on deal win", "1", datetime(2026, 9, 28, 2, 0, tzinfo=timezone.utc)),
+            make_headline("Infosys shares fall 1% on guidance", "2", datetime(2026, 9, 28, 1, 0, tzinfo=timezone.utc)),
+        ],
+        in_path,
+    )
+    root = Path(__file__).resolve().parent.parent
+    res = subprocess.run(
+        [sys.executable, "-m", "sentiment.correlate", "--in", str(in_path), "--prices-dir", str(frozen),
+         "--out", str(tmp_path / "c.csv")],
+        cwd=root, capture_output=True, text=True,
+    )
+    assert res.returncode == 0, res.stderr
+    assert "2 headlines resolved to a ticker with price data" in res.stdout
+    bad = subprocess.run(
+        [sys.executable, "-m", "sentiment.correlate", "--prices-dir", str(frozen), "--live"],
+        cwd=root, capture_output=True, text=True,
+    )
+    assert bad.returncode == 2

@@ -42,24 +42,36 @@ def test_count_matches_the_named_commit():
     assert sum(1 for _ in csv.DictReader(io.StringIO(shown.stdout))) == int(count.group(1))
 
 
-def test_line_reports_every_interval_the_rerun_printed():
+FROZEN = "fixtures/frozen/grown-2026-10-30"
+
+
+def test_line_reproduces_from_a_frozen_copy_in_the_tree():
+    # P161: the line used to say "git checkout 67baa03 -- the corpus" with
+    # "these price fixtures"; the price workflow then added bars, the rerun
+    # stopped matching, and this check skipped in Actions (depth-1 clone,
+    # no 67baa03). The corpus and the price fixtures the line used are now
+    # frozen in the tree, so the check needs no git history.
+    line = _grown_line()
+    assert f"--in {FROZEN}/headlines_raw.csv" in line and f"--prices-dir {FROZEN}/prices" in line
+    count = re.search(r"\b(\d+) headlines\b", line).group(1)
+    with (ROOT / FROZEN / "headlines_raw.csv").open(newline="", encoding="utf-8") as f:
+        assert sum(1 for _ in csv.DictReader(f)) == int(count)
+
+
+def test_line_reports_every_interval_the_rerun_printed(tmp_path):
     # P109: the line said "both CIs still contain zero" and left out the
     # same rerun's event-study interval, which does not. Rerun correlate on
-    # the named commit's corpus and require all three intervals in the line.
+    # the frozen corpus and prices (P161) and require all three intervals.
     line = _grown_line()
-    sha = re.search(r"at `([0-9a-f]{7,40})`", line).group(1)
-    shown = subprocess.run(["git", "show", f"{sha}:{CORPUS}"], cwd=ROOT, capture_output=True, text=True)
-    if shown.returncode:
-        pytest.skip(f"{sha} not in this (shallow) checkout")
-    tmp = ROOT / "outputs" / f"_readme_check_{sha}.csv"
-    tmp.parent.mkdir(exist_ok=True)
-    tmp.write_text(shown.stdout)
-    try:
-        out = subprocess.run(
-            [sys.executable, "-m", "sentiment.correlate", "--in", str(tmp)], cwd=ROOT, capture_output=True, text=True
-        ).stdout
-    finally:
-        tmp.unlink()
+    out = subprocess.run(
+        [
+            sys.executable, "-m", "sentiment.correlate",
+            "--in", str(ROOT / FROZEN / "headlines_raw.csv"),
+            "--prices-dir", str(ROOT / FROZEN / "prices"),
+            "--out", str(tmp_path / "c.csv"),
+        ],
+        cwd=ROOT, capture_output=True, text=True,
+    ).stdout
     for label in ("contemporaneous", "lagged", "event study"):
         m = re.search(rf"^{label}.*95% CI (\[[^\]]+\])", out, re.M)
         assert m, f"correlate printed no {label} interval"
