@@ -1,5 +1,7 @@
 # Statistical power of the pre-registered follow-up test
 
+Educational research on historical data. Not investment advice. Not a SEBI-registered research analyst.
+
 Day 84 (hub `CRITIQUES.md` R18). The original "Pre-registered follow-up
 test" data gate (README, set when that section was first written) required
 "at least 100 headlines resolved to a priced ticker" before computing a
