@@ -111,7 +111,7 @@ def test_scrape_gdelt_run_summarises_when_every_query_was_skipped(monkeypatch, t
     from sentiment import scrape_gdelt
 
     monkeypatch.setattr(
-        scrape_gdelt, "fetch_gdelt_live", lambda company, robots, limiter: ([], "robots_unreachable: timed out")
+        scrape_gdelt, "fetch_gdelt_live_raw", lambda company, robots, limiter: ([], "robots_unreachable: timed out", None)
     )
     code = scrape_gdelt.run(["Infosys", "Wipro"], live=True, out=tmp_path / "h.csv", snapshot=False)
     err = capsys.readouterr().err

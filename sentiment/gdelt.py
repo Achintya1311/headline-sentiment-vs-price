@@ -109,7 +109,20 @@ def fetch_gdelt_live(
     maxrecords: int = 50,
     timeout: float = 15.0,
 ) -> tuple[list[Headline], str]:
-    """Returns (headlines, status); status is "ok", "robots_denied",
+    """Returns (headlines, status); see ``fetch_gdelt_live_raw``."""
+    headlines, status, _ = fetch_gdelt_live_raw(query, robots, limiter, maxrecords=maxrecords, timeout=timeout)
+    return headlines, status
+
+
+def fetch_gdelt_live_raw(
+    query: str,
+    robots: RobotsCache,
+    limiter: RateLimiter,
+    maxrecords: int = 50,
+    timeout: float = 15.0,
+) -> tuple[list[Headline], str, bytes | None]:
+    """Returns (headlines, status, raw): ``raw`` is the response body when
+    status is "ok", else None. status is "ok", "robots_denied",
     "robots_unreachable: <reason>" (robots.txt could not be read, R27) or
     "fetch_failed: <reason>" - the same contract ``sentiment.scrape``'s
     ``scrape_feed_live`` already uses, so callers can handle both sources
@@ -117,7 +130,7 @@ def fetch_gdelt_live(
     url = build_query_url(query, maxrecords=maxrecords)
     if not robots.can_fetch(url):
         reason = robots.unreadable_reason(url)
-        return [], f"robots_unreachable: {reason}" if reason else "robots_denied"
+        return [], (f"robots_unreachable: {reason}" if reason else "robots_denied"), None
     host = urllib.parse.urlparse(url).netloc
     limiter.wait(host, extra_delay=max(robots.crawl_delay(url), DEFAULT_MIN_INTERVAL_SECONDS))
     try:
@@ -125,12 +138,14 @@ def fetch_gdelt_live(
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read()
     except (urllib.error.URLError, TimeoutError, OSError) as e:
-        return [], f"fetch_failed: {e}"
+        return [], f"fetch_failed: {e}", None
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
         # The 429 rate-limit response is plain text, not JSON - treat the
         # same as any other fetch failure rather than crashing the run.
-        return [], f"fetch_failed: non-JSON response ({e})"
+        return [], f"fetch_failed: non-JSON response ({e})", None
     scraped_at = datetime.now(timezone.utc)
-    return parse_gdelt_response(data, scraped_at=scraped_at), "ok"
+    # The raw bytes go back too, so a caller can snapshot exactly what was
+    # parsed without a second request (P160: that re-request hit 429).
+    return parse_gdelt_response(data, scraped_at=scraped_at), "ok", raw
